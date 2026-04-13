@@ -1,0 +1,91 @@
+# ESTADO DEL PROYECTO: EventHive - Plataforma de Gestión de Eventos
+
+## 1. LO QUE SE HA HECHO (Frontend y Backend - Fase 2)
+La plataforma ha evolucionado de un prototipo estático a una aplicación funcional conectada a una arquitectura de microservicios real con bases de datos independientes.
+
+### Arquitectura de Microservicios Implementada:
+- **API Gateway (Puerto 8080):** Punto de entrada único que gestiona el tráfico y lo redirige a los servicios internos.
+- **User Service (Puerto 5001):** Gestión de usuarios, registro e inicio de sesión seguro con JWT (JSON Web Tokens) y encriptación de contraseñas mediante bcrypt.
+- **Events Service (Puerto 5002):** CRUD completo de eventos (Crear, leer y eliminar) con filtrado por organizador.
+- **Ticket Service (Puerto 5003):** Gestión de compras y relación usuario-evento. Permite consultar "Mis Tickets" con detalles enriquecidos.
+- **Payment Service (Puerto 5005):** Simulación de pasarela de pagos con soporte para PayPal, Tarjeta de Crédito y Débito. Registra transacciones en su propia base de datos.
+
+### Persistencia de Datos (MySQL):
+Se ha implementado el patrón **Database per Service** utilizando Docker:
+- `user_db`: Datos de perfiles y credenciales.
+- `events_db`: Catálogo de eventos disponibles.
+- `tickets_db`: Registro de transacciones y entradas compradas.
+- `payment_db`: Historial de pagos y transacciones simuladas.
+- **Adminer (Puerto 8081):** Interfaz web para gestionar visualmente las cuatro bases de datos.
+
+### Integración Frontend-Backend:
+- Conexión real mediante `fetch` y variables de entorno (`.env.local`).
+- Sistema de autenticación persistente con `localStorage`.
+- Dashboard dinámico que muestra información personalizada según el usuario logueado.
+- Flujo de compra completo: Detalle de evento -> Selección de método de pago -> Procesamiento simulado -> Generación de ticket.
+
+---
+
+## 2. CÓMO EJECUTAR EL PROYECTO (Paso a Paso)
+
+### Requisitos Previos:
+- Tener instalado **Docker Desktop** y **Node.js**.
+
+### Paso 1: ENCENDER el Backend (Microservicios)
+1. Abre una terminal en la carpeta raíz del proyecto.
+2. Entra a la carpeta del backend: `cd backend`
+3. Ejecuta el comando para levantar todos los contenedores:
+   ```bash
+   docker-compose up --build -d
+   ```
+   *Esto descargará MySQL, Adminer y construirá tus servicios de Node.js.*
+
+### Paso 2: Poblar la Base de Datos (Opcional)
+Si quieres tener eventos de prueba inmediatamente:
+1. Ejecuta el script de semillas:
+   ```bash
+   docker exec -it events-service node seed.js
+   ```
+
+### Paso 3: Levantar el Frontend (Next.js)
+1. Abre una nueva terminal en la carpeta raíz.
+2. Entra a la carpeta del frontend: `cd frontend`
+3. Instala las dependencias (solo la primera vez): `npm install`
+4. Inicia el servidor de desarrollo: `npm run dev`
+5. Abre [http://localhost:3000](http://localhost:3000) en tu navegador.
+
+### Paso 4: Gestionar las Bases de Datos
+1. Ve a [http://localhost:8081](http://localhost:8081).
+2. Para ver los usuarios, usa el servidor `user-db`, usuario `root` y contraseña `root`.
+
+---
+
+## 3. LO QUE FALTA POR HACER (Próximas Fases)
+
+### Funcionalidades Técnicas:
+- **Pasarela de Pagos:** Integración real con Stripe o PayPal para procesar los pagos de los tickets.
+- **Generación de QR Real:** Implementar la librería `qrcode.react` para que los tickets en `ticket.js` tengan un código escaneable de verdad.
+- **Servicio de Notificaciones:** Enviar correos automáticos de confirmación tras la compra (NodeMailer / SendGrid).
+- **Subida de Imágenes:** Conectar con Cloudinary para que los organizadores puedan subir fotos reales de sus eventos.
+
+### UI/UX y Mejoras:
+- **Protección de Rutas:** Evitar que se pueda entrar al Dashboard sin estar logueado (Middleware de Next.js).
+- **Filtros Avanzados:** Búsqueda por precio, fecha exacta y ciudad mediante queries al backend.
+- **Modo Oscuro:** Implementar el selector de tema con TailwindCSS.
+- **PWA:** Configurar para que la app sea instalable en móviles.
+
+---
+
+## 4. NOTAS DE SEGURIDAD
+- El `JWT_SECRET` se encuentra actualmente en el `docker-compose.yml` para fines de desarrollo. En producción, debe moverse a un archivo `.env` protegido.
+- Las contraseñas se guardan siempre hasheadas en la base de datos `user_db`.
+
+##5 ACTUALIZAR DOCKER CON ESTOS COMANDOS
+cd backend
+   2 docker-compose down
+   3 docker-compose up --build -d
+
+##6 CUENTA DE PAGO PAYPAL 
+    sb-6s5in50449326@personal.example.com
+    hPjy0-2#
+

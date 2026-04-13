@@ -1,0 +1,15 @@
+{
+  "name": "review-service",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "express": "^4.18.2",
+    "sequelize": "^6.32.1",
+    "mysql2": "^3.4.0",
+    "cors": "^2.8.5",
+    "axios": "^1.4.0"
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
+}

@@ -1,0 +1,180 @@
+version: '3.8'
+
+services:
+  # Base de Datos de Usuarios
+  user-db:
+    image: mysql:8.0
+    container_name: user-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: user_db
+    ports:
+      - "3309:3306"
+    volumes:
+      - user_data:/var/lib/mysql
+
+  # Base de Datos de Eventos
+  events-db:
+    image: mysql:8.0
+    container_name: events-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: events_db
+    ports:
+      - "3307:3306"
+    volumes:
+      - events_data:/var/lib/mysql
+
+  # Base de Datos de Tickets
+  tickets-db:
+    image: mysql:8.0
+    container_name: tickets-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: tickets_db
+    ports:
+      - "3308:3306"
+    volumes:
+      - tickets_data:/var/lib/mysql
+
+  # Base de Datos de Reseñas
+  reviews-db:
+    image: mysql:8.0
+    container_name: reviews-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: reviews_db
+    ports:
+      - "3310:3306"
+    volumes:
+      - reviews_data:/var/lib/mysql
+
+  # Base de Datos de Pagos
+  payment-db:
+    image: mysql:8.0
+    container_name: payment-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: payment_db
+    ports:
+      - "3311:3306"
+    volumes:
+      - payment_data:/var/lib/mysql
+
+  # Administrador de Base de Datos (Web)
+  adminer:
+    image: adminer
+    container_name: adminer
+    restart: always
+    ports:
+      - "8081:8080"
+
+  # Microservicio de Usuarios
+  user-service:
+    build: ./user-service
+    container_name: user-service
+    restart: always
+    environment:
+      DB_HOST: user-db
+      DB_USER: root
+      DB_PASS: root
+      DB_NAME: user_db
+      JWT_SECRET: eventhive_secret_key_2026
+    depends_on:
+      - user-db
+    ports:
+      - "5001:5001"
+
+  # Microservicio de Eventos
+  events-service:
+    build: ./events-service
+    container_name: events-service
+    restart: always
+    environment:
+      DB_HOST: events-db
+      DB_USER: root
+      DB_PASS: root
+      DB_NAME: events_db
+    depends_on:
+      - events-db
+    ports:
+      - "5002:5002"
+
+  # Microservicio de Tickets
+  ticket-service:
+    build: ./ticket-service
+    container_name: ticket-service
+    restart: always
+    environment:
+      DB_HOST: tickets-db
+      DB_USER: root
+      DB_PASS: root
+      DB_NAME: tickets_db
+      EVENTS_SERVICE_URL: http://events-service:5002
+    depends_on:
+      - tickets-db
+      - events-service
+    ports:
+      - "5003:5003"
+
+  # Microservicio de Reseñas
+  review-service:
+    build: ./review-service
+    container_name: review-service
+    restart: always
+    environment:
+      DB_HOST: reviews-db
+      DB_USER: root
+      DB_PASS: root
+      DB_NAME: reviews_db
+    depends_on:
+      - reviews-db
+    ports:
+      - "5004:5004"
+
+  # Microservicio de Pagos
+  payment-service:
+    build: ./payment-service
+    container_name: payment-service
+    restart: always
+    environment:
+      DB_HOST: payment-db
+      DB_USER: root
+      DB_PASS: root
+      DB_NAME: payment_db
+    depends_on:
+      - payment-db
+    ports:
+      - "5005:5005"
+
+  # API Gateway
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    restart: always
+    environment:
+      USER_SERVICE_URL: http://user-service:5001
+      EVENTS_SERVICE_URL: http://events-service:5002
+      TICKETS_SERVICE_URL: http://ticket-service:5003
+      REVIEWS_SERVICE_URL: http://review-service:5004
+      PAYMENT_SERVICE_URL: http://payment-service:5005
+    ports:
+      - "8080:8080"
+    depends_on:
+      - user-service
+      - events-service
+      - ticket-service
+      - review-service
+      - payment-service
+
+volumes:
+  user_data:
+  events_data:
+  tickets_data:
+  reviews_data:
+  payment_data:

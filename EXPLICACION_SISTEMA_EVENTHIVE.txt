@@ -1,0 +1,76 @@
+================================================================================
+DOCUMENTACIÓN TÉCNICA Y RESUMEN DE CAMBIOS - EVENTHIVE
+================================================================================
+
+1. ARQUITECTURA GENERAL DEL SISTEMA
+-----------------------------------
+EventHive es una aplicación basada en microservicios, compuesta por:
+- FRONTEND: Desarrollado en Next.js (React) con Tailwind CSS.
+- BACKEND: Cuatro microservicios independientes en Node.js (Express).
+- BASES DE DATOS: Tres instancias de MySQL (una para cada servicio principal).
+- GATEWAY: Un punto único de entrada para todas las peticiones del frontend.
+
+2. DETALLE DE LOS MICROSERVICIOS (BACKEND)
+------------------------------------------
+A. API GATEWAY (Puerto 8080):
+   - Actúa como intermediario. Recibe las peticiones del frontend y las
+     redirige al microservicio correcto (/users, /events, /tickets).
+   - Centraliza la comunicación y evita problemas de CORS.
+
+B. USER SERVICE (Puerto 5001):
+   - Gestiona el registro, login y perfiles de usuario.
+   - Utiliza JWT para la autenticación (aunque en esta fase se usa 
+     principalmente el ID de usuario guardado en localStorage).
+
+C. EVENTS SERVICE (Puerto 5002):
+   - Administra la creación, lectura y eliminación de eventos.
+   - Cada evento tiene título, fecha, ubicación, precio y categoría.
+
+D. TICKET SERVICE (Puerto 5003):
+   - Gestiona la compra de entradas. Cada ticket vincula un userId con un eventId.
+   - CAMBIO CLAVE: Se añadió el endpoint `GET /tickets/:id` que no existía.
+   - Lógica de Agregación: Cuando pides un ticket, este servicio consulta al
+     'events-service' para traer los detalles del evento en tiempo real.
+   - Fallback de Red: El servicio detecta si está en Docker o en local 
+     para asegurar que la comunicación interna no falle.
+
+3. FLUJO DEL FRONTEND (NEXT.JS)
+-------------------------------
+A. REGISTRO/LOGIN:
+   - El usuario se autentica y sus datos se guardan en `localStorage`.
+
+B. CARTELERA Y COMPRA (`pages/eventos.js` y `pages/detalle-evento.js`):
+   - El usuario elige un evento. Al pulsar "Comprar", se envía una 
+     petición POST al `ticket-service` con el ID del usuario y del evento.
+
+C. DASHBOARD (`pages/dashboard.js`):
+   - Recupera todos los tickets del usuario logueado.
+   - Cada ticket tiene un botón "Ver Ticket" que redirige a `/ticket?id=ID_REAL`.
+
+D. PÁGINA DE TICKET (`pages/ticket.js`):
+   - CAMBIO CLAVE: Se eliminó el contenido estático ("Juan Pérez", 
+     evento de prueba).
+   - Sincronización: Se implementó `router.isReady` para esperar a que 
+     Next.js lea el ID de la URL.
+   - Fetching Dinámico: Se hace una petición al Gateway para obtener los 
+     datos del ticket y del evento asociado, mostrando información real.
+
+4. SOLUCIONES IMPLEMENTADAS A LOS ERRORES REPORTADOS
+----------------------------------------------------
+1. "No me sale la información del ticket seleccionado":
+   - CAUSA: La página `ticket.js` tenía datos "quemados" en el HTML.
+   - SOLUCIÓN: Se programó la lógica de React (useState/useEffect) para 
+     consumir la API y el backend se actualizó para devolver esos datos.
+
+2. "Aparece ¡Ups! No encontramos este ticket":
+   - CAUSA: Race condition en el frontend (se pedía el dato antes de tener 
+     el ID) y falta de comunicación entre contenedores Docker.
+   - SOLUCIÓN: Uso de `router.isReady` en frontend y lógica de 
+     "Docker-to-Local fallback" en el backend.
+
+5. TECNOLOGÍAS UTILIZADAS
+-------------------------
+- Frontend: React 18, Next.js, Lucide Icons, Tailwind CSS.
+- Backend: Node.js, Express, Sequelize (ORM), Axios (comunicación entre servicios).
+- Infraestructura: Docker & Docker Compose para orquestación de servicios.
+================================================================================
