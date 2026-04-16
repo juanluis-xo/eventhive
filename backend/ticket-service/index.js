@@ -39,6 +39,48 @@ const getEvent = async (eventId) => {
   }
 };
 
+// 0b. Verificar ticket por código (EH-YYYY-X####) — ruta pública para QR
+app.get('/verify/:code', async (req, res) => {
+  const code = req.params.code.toUpperCase();
+  // Parsear código: EH-YYYY-X#### → extraer ID numérico
+  const match = code.match(/^EH-\d{4}-X(\d+)$/);
+  if (!match) {
+    return res.status(400).json({ valid: false, error: 'Código de ticket inválido.' });
+  }
+  const ticketId = parseInt(match[1], 10);
+  try {
+    const ticket = await Ticket.findByPk(ticketId);
+    if (!ticket) {
+      return res.status(404).json({ valid: false, error: 'Ticket no encontrado.' });
+    }
+    // Obtener datos del evento
+    let event = { title: 'Evento no disponible' };
+    try {
+      const evRes = await getEvent(ticket.eventId);
+      event = evRes.data;
+    } catch { /* evento no disponible — igual devolvemos el ticket */ }
+
+    res.json({
+      valid: true,
+      code,
+      ticket: {
+        id:           ticket.id,
+        purchaseDate: ticket.purchaseDate,
+        userId:       ticket.userId,
+        categoryId:   ticket.categoryId
+      },
+      event: {
+        id:       event.id,
+        title:    event.title    || 'Evento',
+        date:     event.date     || null,
+        location: event.location || null
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ valid: false, error: error.message });
+  }
+});
+
 // 0. IDs de usuarios con ticket en un evento (para notification-service broadcast)
 app.get('/event-users/:eventId', async (req, res) => {
   try {

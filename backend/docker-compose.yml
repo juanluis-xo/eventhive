@@ -238,19 +238,45 @@ services:
     ports:
       - "5006:5006"
 
+  # ─── Mobile BFF (Backend for Frontend) ────────────────────────────────────
+  mobile-bff:
+    build: ./mobile-bff
+    container_name: mobile-bff
+    restart: always
+    environment:
+      PORT: 5008
+      USER_SERVICE_URL:         http://user-service:5001
+      EVENTS_SERVICE_URL:       http://events-service:5002
+      TICKETS_SERVICE_URL:      http://ticket-service:5003
+      REVIEWS_SERVICE_URL:      http://review-service:5004
+      PAYMENT_SERVICE_URL:      http://payment-service:5005
+      NOTIFICATION_SERVICE_URL: http://notification-service:5007
+      # URL base de la app web (para generar los links de verificación QR)
+      APP_URL: http://localhost:3000
+    depends_on:
+      - user-service
+      - events-service
+      - ticket-service
+      - review-service
+      - payment-service
+      - notification-service
+    ports:
+      - "5008:5008"
+
   # API Gateway
   api-gateway:
     build: ./api-gateway
     container_name: api-gateway
     restart: always
     environment:
-      USER_SERVICE_URL: http://user-service:5001
-      EVENTS_SERVICE_URL: http://events-service:5002
-      TICKETS_SERVICE_URL: http://ticket-service:5003
-      REVIEWS_SERVICE_URL: http://review-service:5004
-      PAYMENT_SERVICE_URL: http://payment-service:5005
-      ANALYTICS_SERVICE_URL:     http://analytics-service:5006
-      NOTIFICATION_SERVICE_URL:  http://notification-service:5007
+      USER_SERVICE_URL:         http://user-service:5001
+      EVENTS_SERVICE_URL:       http://events-service:5002
+      TICKETS_SERVICE_URL:      http://ticket-service:5003
+      REVIEWS_SERVICE_URL:      http://review-service:5004
+      PAYMENT_SERVICE_URL:      http://payment-service:5005
+      ANALYTICS_SERVICE_URL:    http://analytics-service:5006
+      NOTIFICATION_SERVICE_URL: http://notification-service:5007
+      MOBILE_BFF_URL:           http://mobile-bff:5008
     ports:
       - "8080:8080"
     depends_on:
@@ -261,6 +287,7 @@ services:
       - payment-service
       - analytics-service
       - notification-service
+      - mobile-bff
 
 volumes:
   user_data:

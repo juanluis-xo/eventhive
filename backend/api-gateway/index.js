@@ -16,15 +16,17 @@ const reviewsServiceUrl = process.env.REVIEWS_SERVICE_URL || 'http://localhost:5
 const paymentServiceUrl   = process.env.PAYMENT_SERVICE_URL   || 'http://localhost:5005';
 const analyticsServiceUrl      = process.env.ANALYTICS_SERVICE_URL     || 'http://localhost:5006';
 const notificationServiceUrl   = process.env.NOTIFICATION_SERVICE_URL  || 'http://localhost:5007';
+const mobileBffUrl             = process.env.MOBILE_BFF_URL            || 'http://localhost:5008';
 
 // Proxies simples (por defecto eliminan el prefijo /users, /events, /tickets)
-app.use('/users',     proxy(userServiceUrl));
-app.use('/events',    proxy(eventsServiceUrl));
-app.use('/tickets',   proxy(ticketsServiceUrl));
-app.use('/reviews',   proxy(reviewsServiceUrl));
-app.use('/payments',  proxy(paymentServiceUrl));
-app.use('/analytics',      proxy(analyticsServiceUrl));
-app.use('/notifications',  proxy(notificationServiceUrl));
+app.use('/users',         proxy(userServiceUrl));
+app.use('/events',        proxy(eventsServiceUrl));
+app.use('/tickets',       proxy(ticketsServiceUrl));
+app.use('/reviews',       proxy(reviewsServiceUrl));
+app.use('/payments',      proxy(paymentServiceUrl));
+app.use('/analytics',     proxy(analyticsServiceUrl));
+app.use('/notifications', proxy(notificationServiceUrl));
+app.use('/mobile',        proxy(mobileBffUrl));   // BFF móvil — agrega múltiples servicios
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'API Gateway is running' });

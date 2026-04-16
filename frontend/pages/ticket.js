@@ -7,17 +7,14 @@ import {
 } from 'lucide-react';
 
 /* ─── Helpers QR ─────────────────────────────────────────────────── */
-function buildQrPayload(ticket, username) {
+// El QR ahora apunta a la URL de verificación pública
+function buildQrPayload(ticket /*, username — ya no se necesita */) {
   const code = ticketCode(ticket);
-  return [
-    'EVENTHIVE TICKET',
-    `ID: ${code}`,
-    `EVENTO: ${ticket.event?.title ?? ''}`,
-    `FECHA: ${ticket.event?.date ?? ''}`,
-    `LUGAR: ${ticket.event?.location ?? ''}`,
-    `ASISTENTE: ${username ?? ''}`,
-    'ESTADO: CONFIRMADO',
-  ].join('\n');
+  // En producción cambia localhost:3000 por tu dominio real
+  const baseUrl = typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.host}`
+    : 'http://localhost:3000';
+  return `${baseUrl}/verify/${code}`;
 }
 
 function buildQrUrl(payload, size = 280) {
@@ -234,7 +231,7 @@ export default function TicketPage() {
   const handleDownloadPDF = () => {
     if (!ticket || !qrLoaded) return;
     const code = ticketCode(ticket);
-    const payload = buildQrPayload(ticket, user?.username);
+    const payload = buildQrPayload(ticket);
     const qrSrc   = buildQrUrl(payload, 400);   // tamaño grande para PDF
     const purchaseDate = new Date(ticket.purchaseDate).toLocaleDateString('es-ES', {
       day: '2-digit', month: 'long', year: 'numeric'
@@ -268,7 +265,7 @@ export default function TicketPage() {
   const purchaseDate = new Date(ticket.purchaseDate).toLocaleDateString('es-ES', {
     day: '2-digit', month: 'long', year: 'numeric'
   });
-  const qrUrl = buildQrUrl(buildQrPayload(ticket, user?.username));
+  const qrUrl = buildQrUrl(buildQrPayload(ticket));
 
   const infoBlocks = [
     { label: 'ASISTENTE',    value: user?.username,  icon: User,     mono: false },
