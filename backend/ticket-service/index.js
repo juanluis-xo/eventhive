@@ -5,7 +5,8 @@ const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 5003;
-const EVENTS_SERVICE_URL = process.env.EVENTS_SERVICE_URL || 'http://events-service:5002';
+const EVENTS_SERVICE_URL        = process.env.EVENTS_SERVICE_URL        || 'http://events-service:5002';
+const NOTIFICATION_SERVICE_URL  = process.env.NOTIFICATION_SERVICE_URL  || 'http://notification-service:5007';
 
 app.use(cors());
 app.use(express.json());
@@ -37,6 +38,21 @@ const getEvent = async (eventId) => {
     return await axios.get(`http://localhost:5002/${eventId}`);
   }
 };
+
+// 0. IDs de usuarios con ticket en un evento (para notification-service broadcast)
+app.get('/event-users/:eventId', async (req, res) => {
+  try {
+    const tickets = await Ticket.findAll({
+      where: { eventId: req.params.eventId },
+      attributes: ['userId']
+    });
+    // Devolver IDs únicos
+    const userIds = [...new Set(tickets.map(t => t.userId))];
+    res.json({ eventId: parseInt(req.params.eventId), userIds });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // 1. Estadísticas de tickets por evento (para Cartera del admin)
 app.get('/event-stats/:eventId', async (req, res) => {
@@ -101,6 +117,15 @@ app.post('/', async (req, res) => {
       }
     }
     res.status(201).json(ticket);
+
+    // Disparar notificación ticket.purchased (no bloqueante — si falla, el ticket ya está creado)
+    axios.post(`${NOTIFICATION_SERVICE_URL}/notify`, {
+      type:     'ticket.purchased',
+      userId:   ticket.userId,
+      eventId:  ticket.eventId,
+      ticketId: ticket.id
+    }).catch(e => console.log('[TicketService] Notificación no enviada (no crítico):', e.message));
+
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

@@ -13,14 +13,18 @@ const userServiceUrl = process.env.USER_SERVICE_URL || 'http://localhost:5001';
 const eventsServiceUrl = process.env.EVENTS_SERVICE_URL || 'http://localhost:5002';
 const ticketsServiceUrl = process.env.TICKETS_SERVICE_URL || 'http://localhost:5003';
 const reviewsServiceUrl = process.env.REVIEWS_SERVICE_URL || 'http://localhost:5004';
-const paymentServiceUrl = process.env.PAYMENT_SERVICE_URL || 'http://localhost:5005';
+const paymentServiceUrl   = process.env.PAYMENT_SERVICE_URL   || 'http://localhost:5005';
+const analyticsServiceUrl      = process.env.ANALYTICS_SERVICE_URL     || 'http://localhost:5006';
+const notificationServiceUrl   = process.env.NOTIFICATION_SERVICE_URL  || 'http://localhost:5007';
 
 // Proxies simples (por defecto eliminan el prefijo /users, /events, /tickets)
-app.use('/users', proxy(userServiceUrl));
-app.use('/events', proxy(eventsServiceUrl));
-app.use('/tickets', proxy(ticketsServiceUrl));
-app.use('/reviews', proxy(reviewsServiceUrl));
-app.use('/payments', proxy(paymentServiceUrl));
+app.use('/users',     proxy(userServiceUrl));
+app.use('/events',    proxy(eventsServiceUrl));
+app.use('/tickets',   proxy(ticketsServiceUrl));
+app.use('/reviews',   proxy(reviewsServiceUrl));
+app.use('/payments',  proxy(paymentServiceUrl));
+app.use('/analytics',      proxy(analyticsServiceUrl));
+app.use('/notifications',  proxy(notificationServiceUrl));
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'API Gateway is running' });

@@ -5,7 +5,9 @@ import {
   Ticket, Calendar, User, Settings, LogOut, ChevronRight, QrCode,
   Plus, Loader2, PackageOpen, X, MapPin, Tag, Info, BarChart3,
   Star, MessageSquare, Wallet, Edit2, Trash2, ChevronDown, ChevronUp,
-  Building, CreditCard, Save, Image as ImageIcon, Users
+  Building, CreditCard, Save, Image as ImageIcon, Users,
+  TrendingUp, RefreshCw, Activity, DollarSign,
+  Bell, Megaphone, Send, CheckCheck
 } from 'lucide-react';
 
 const PAISES_CIUDADES = {
@@ -32,224 +34,12 @@ const EMPTY_EVENT = {
   categories:[{ ...EMPTY_CATEGORY }]
 };
 
-export default function Dashboard() {
-  const router = useRouter();
-  const [activeTab, setActiveTab]           = useState('tickets');
-  const [user, setUser]                     = useState(null);
-
-  // Datos generales
-  const [tickets, setTickets]               = useState([]);
-  const [myEvents, setMyEvents]             = useState([]);
-  const [loading, setLoading]               = useState(true);
-  const [eventStats, setEventStats]         = useState([]);
-
-  // Crear evento
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newEvent, setNewEvent]             = useState({ ...EMPTY_EVENT, categories:[{ ...EMPTY_CATEGORY }] });
-  const [creating, setCreating]             = useState(false);
-
-  // Editar evento
-  const [showEditModal, setShowEditModal]   = useState(false);
-  const [editForm, setEditForm]             = useState(null);
-  const [saving, setSaving]                 = useState(false);
-
-  // Cartera
-  const [ticketStats, setTicketStats]       = useState({});
-  const [walletForms, setWalletForms]       = useState({});
-  const [expandedWallet, setExpandedWallet] = useState(null);
-  const [savingWallet, setSavingWallet]     = useState(null);
-
-  useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    if (!savedUser) { router.push('/login'); return; }
-    const userData = JSON.parse(savedUser);
-    setUser(userData);
-    // Admin ve cartera por defecto
-    if (userData.role === 'admin') setActiveTab('cartera');
-    fetchData(userData);
-  }, [router]);
-
-  const fetchData = async (userData) => {
-    setLoading(true);
-    try {
-      if (userData.role !== 'admin') {
-        const ticketRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets/user/${userData.id}`);
-        setTickets(await ticketRes.json());
-      }
-
-      const eventRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events/organizer/${userData.username}`);
-      const eventData = await eventRes.json();
-      setMyEvents(eventData);
-
-      if (userData.role === 'admin' && eventData.length > 0) {
-        // Estadísticas de reseñas
-        const eventIds = eventData.map(e => e.id).join(',');
-        const statsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/reviews/stats?eventIds=${eventIds}`);
-        const statsData = await statsRes.json();
-        const mergedStats = eventData.map(e => {
-          const stat = statsData.find(s => s.eventId === e.id);
-          return { ...e, average: stat ? stat.average : 0, reviewCount: stat ? stat.count : 0 };
-        }).sort((a, b) => b.average - a.average);
-        setEventStats(mergedStats);
-
-        // Estadísticas de tickets para Cartera
-        const token = localStorage.getItem('token');
-        const statsMap = {};
-        const walletMap = {};
-        await Promise.all(eventData.map(async (event) => {
-          try {
-            const tsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets/event-stats/${event.id}`);
-            statsMap[event.id] = await tsRes.json();
-          } catch { statsMap[event.id] = { total: 0, byCategory: {} }; }
-          try {
-            const wRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events/${event.id}/wallet`, {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-            walletMap[event.id] = await wRes.json();
-          } catch { walletMap[event.id] = {}; }
-        }));
-        setTicketStats(statsMap);
-        setWalletForms(walletMap);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    router.push('/');
-  };
-
-  // ── CREAR EVENTO ──────────────────────────────────────────────────────────
-  const handleCreateEvent = async (e) => {
-    e.preventDefault();
-    setCreating(true);
-    try {
-      const token = localStorage.getItem('token');
-      const location = newEvent.city ? `${newEvent.city}, ${newEvent.country}` : newEvent.country;
-      const minPrice = newEvent.categories.length > 0
-        ? Math.min(...newEvent.categories.map(c => parseFloat(c.price) || 0))
-        : parseFloat(newEvent.price) || 0;
-
-      const payload = {
-        title: newEvent.title, date: newEvent.date, location,
-        description: newEvent.description, fullDescription: newEvent.fullDescription,
-        category: newEvent.category, price: minPrice,
-        organizer: user.username, imageUrl: newEvent.imageUrl || null,
-        categories: newEvent.categories.filter(c => c.name && c.price && c.capacity).map(c => ({
-          name: c.name, price: parseFloat(c.price), capacity: parseInt(c.capacity)
-        }))
-      };
-
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) throw new Error('Error al crear el evento');
-
-      setShowCreateModal(false);
-      setNewEvent({ ...EMPTY_EVENT, categories:[{ ...EMPTY_CATEGORY }] });
-      await fetchData(user);
-      setActiveTab('events');
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  // ── EDITAR EVENTO ─────────────────────────────────────────────────────────
-  const handleOpenEdit = (event) => {
-    const [city='', ...rest] = (event.location || '').split(', ');
-    const country = rest.join(', ') || 'Colombia';
-    setEditForm({
-      ...event,
-      country, city,
-      imageUrl: event.imageUrl || '',
-      categories: event.categories && event.categories.length > 0
-        ? event.categories.map(c => ({ name: c.name, price: String(c.price), capacity: String(c.capacity), sold: c.sold || 0 }))
-        : [{ ...EMPTY_CATEGORY }]
-    });
-    setShowEditModal(true);
-  };
-
-  const handleSaveEdit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      const token = localStorage.getItem('token');
-      const location = editForm.city ? `${editForm.city}, ${editForm.country}` : editForm.country;
-      const minPrice = editForm.categories.length > 0
-        ? Math.min(...editForm.categories.map(c => parseFloat(c.price) || 0))
-        : parseFloat(editForm.price) || 0;
-
-      const payload = {
-        title: editForm.title, date: editForm.date, location,
-        description: editForm.description, fullDescription: editForm.fullDescription,
-        category: editForm.category, price: minPrice,
-        organizer: user.username, imageUrl: editForm.imageUrl || null,
-        categories: editForm.categories.filter(c => c.name && c.price && c.capacity).map(c => ({
-          name: c.name, price: parseFloat(c.price), capacity: parseInt(c.capacity), sold: c.sold || 0
-        }))
-      };
-
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events/${editForm.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) throw new Error('Error al guardar los cambios');
-
-      setShowEditModal(false);
-      setEditForm(null);
-      await fetchData(user);
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ── ELIMINAR EVENTO ───────────────────────────────────────────────────────
-  const handleDeleteEvent = async (id) => {
-    if (!confirm('¿Estás seguro de que quieres eliminar este evento?')) return;
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events/${id}`, {
-        method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (response.ok) { setMyEvents(myEvents.filter(e => e.id !== id)); }
-    } catch (err) { alert('Error al eliminar'); }
-  };
-
-  // ── GUARDAR WALLET ────────────────────────────────────────────────────────
-  const handleSaveWallet = async (eventId) => {
-    setSavingWallet(eventId);
-    try {
-      const token = localStorage.getItem('token');
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events/${eventId}/wallet`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(walletForms[eventId] || {})
-      });
-      alert('Cuenta guardada correctamente.');
-    } catch (err) {
-      alert('Error al guardar la cuenta.');
-    } finally {
-      setSavingWallet(null);
-    }
-  };
-
-  if (!user) return null;
-
-  // ── FORMULARIO DE EVENTO (compartido por Crear y Editar) ──────────────────
-  const EventForm = ({ data, onChange, onCatChange, onAddCat, onRemoveCat, onSubmit, submitting, submitLabel }) => (
+// ── FORMULARIO DE EVENTO — componente a nivel de módulo (fuera de Dashboard)
+// Esto evita que React lo desmonte/remonte en cada pulsación de tecla.
+function EventForm({ data, onChange, onCatChange, onAddCat, onRemoveCat, onSubmit, submitting, submitLabel, onClose }) {
+  return (
     <form onSubmit={onSubmit} className="p-8 max-h-[72vh] overflow-y-auto custom-scrollbar space-y-5">
+
       {/* Título */}
       <div>
         <label className="form-label">Título del Evento</label>
@@ -307,11 +97,12 @@ export default function Dashboard() {
             value={data.imageUrl} onChange={e => onChange('imageUrl', e.target.value)} />
         </div>
         {data.imageUrl && (
-          <img src={data.imageUrl} alt="Preview" className="mt-2 w-full h-32 object-cover rounded-xl border border-slate-200" onError={e => e.target.style.display='none'} />
+          <img src={data.imageUrl} alt="Preview" className="mt-2 w-full h-32 object-cover rounded-xl border border-slate-200"
+            onError={e => e.target.style.display='none'} />
         )}
       </div>
 
-      {/* Categoría del evento + Tipo */}
+      {/* Tipo de evento */}
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="form-label">Tipo de Evento</label>
@@ -377,7 +168,7 @@ export default function Dashboard() {
       </div>
 
       <div className="flex gap-4 pt-2">
-        <button type="button" onClick={() => { setShowCreateModal(false); setShowEditModal(false); }}
+        <button type="button" onClick={onClose}
           className="flex-1 py-4 rounded-2xl font-black text-sm tracking-widest uppercase border-2 border-slate-100 text-slate-400 hover:bg-slate-50">
           Cancelar
         </button>
@@ -389,20 +180,339 @@ export default function Dashboard() {
       </div>
     </form>
   );
+}
 
-  // ── HELPERS PARA FORMULARIOS ──────────────────────────────────────────────
-  const handleNewEventChange = (field, val) => setNewEvent(p => ({ ...p, [field]: val }));
-  const handleNewCatChange = (idx, field, val) => setNewEvent(p => {
+// ── DASHBOARD PRINCIPAL ───────────────────────────────────────────────────────
+export default function Dashboard() {
+  const router = useRouter();
+  const [activeTab, setActiveTab]           = useState('tickets');
+  const [user, setUser]                     = useState(null);
+
+  // Datos generales
+  const [tickets, setTickets]               = useState([]);
+  const [myEvents, setMyEvents]             = useState([]);
+  const [loading, setLoading]               = useState(true);
+  const [eventStats, setEventStats]         = useState([]);
+
+  // Crear evento
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newEvent, setNewEvent]             = useState({ ...EMPTY_EVENT, categories:[{ ...EMPTY_CATEGORY }] });
+  const [creating, setCreating]             = useState(false);
+
+  // Editar evento
+  const [showEditModal, setShowEditModal]   = useState(false);
+  const [editForm, setEditForm]             = useState(null);
+  const [saving, setSaving]                 = useState(false);
+
+  // Cartera
+  const [ticketStats, setTicketStats]       = useState({});
+  const [walletForms, setWalletForms]       = useState({});
+  const [expandedWallet, setExpandedWallet] = useState(null);
+  const [savingWallet, setSavingWallet]     = useState(null);
+
+  // Analytics
+  const [analyticsOverview, setAnalyticsOverview] = useState(null);
+  const [analyticsEvents, setAnalyticsEvents]     = useState([]);
+  const [analyticsLoading, setAnalyticsLoading]   = useState(false);
+  const [refreshing, setRefreshing]               = useState(false);
+
+  // Notificaciones
+  const [notifications, setNotifications]         = useState([]);
+  const [unreadCount, setUnreadCount]             = useState(0);
+  const [showNotifPanel, setShowNotifPanel]       = useState(false);
+  // Anuncio admin
+  const [showAnnounceModal, setShowAnnounceModal] = useState(false);
+  const [announceEventId, setAnnounceEventId]     = useState(null);
+  const [announceMessage, setAnnounceMessage]     = useState('');
+  const [announcing, setAnnouncing]               = useState(false);
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('user');
+    if (!savedUser) { router.push('/login'); return; }
+    const userData = JSON.parse(savedUser);
+    setUser(userData);
+    if (userData.role === 'admin') setActiveTab('cartera');
+    fetchData(userData);
+  }, [router]);
+
+  // Cargar analytics al entrar en la pestaña
+  useEffect(() => {
+    if (activeTab === 'stats' && user?.role === 'admin') {
+      fetchAnalytics();
+    }
+  }, [activeTab, user]);
+
+  // Cargar notificaciones cuando tengamos usuario
+  useEffect(() => {
+    if (user?.id) {
+      fetchNotifications(user.id);
+      // Refrescar cada 60 segundos
+      const interval = setInterval(() => fetchNotifications(user.id), 60000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
+
+  const fetchData = async (userData) => {
+    setLoading(true);
+    try {
+      if (userData.role !== 'admin') {
+        const ticketRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets/user/${userData.id}`);
+        setTickets(await ticketRes.json());
+      }
+
+      const eventRes  = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events/organizer/${userData.username}`);
+      const eventData = await eventRes.json();
+      setMyEvents(eventData);
+
+      if (userData.role === 'admin' && eventData.length > 0) {
+        const eventIds  = eventData.map(e => e.id).join(',');
+        const statsRes  = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/reviews/stats?eventIds=${eventIds}`);
+        const statsData = await statsRes.json();
+        const mergedStats = eventData.map(e => {
+          const stat = statsData.find(s => s.eventId === e.id);
+          return { ...e, average: stat ? stat.average : 0, reviewCount: stat ? stat.count : 0 };
+        }).sort((a, b) => b.average - a.average);
+        setEventStats(mergedStats);
+
+        const token    = localStorage.getItem('token');
+        const statsMap = {};
+        const walletMap = {};
+        await Promise.all(eventData.map(async (event) => {
+          try {
+            const tsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets/event-stats/${event.id}`);
+            statsMap[event.id] = await tsRes.json();
+          } catch { statsMap[event.id] = { total: 0, byCategory: {} }; }
+          try {
+            const wRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events/${event.id}/wallet`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            walletMap[event.id] = await wRes.json();
+          } catch { walletMap[event.id] = {}; }
+        }));
+        setTicketStats(statsMap);
+        setWalletForms(walletMap);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── ANALYTICS ────────────────────────────────────────────────────────────────
+  const fetchAnalytics = async () => {
+    setAnalyticsLoading(true);
+    try {
+      const token   = localStorage.getItem('token');
+      const headers = { 'Authorization': `Bearer ${token}` };
+      const [ovRes, evRes] = await Promise.all([
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/analytics/overview`, { headers }),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/analytics/events`,   { headers })
+      ]);
+      if (ovRes.ok) setAnalyticsOverview(await ovRes.json());
+      if (evRes.ok) setAnalyticsEvents(await evRes.json());
+    } catch (err) {
+      console.error('[Analytics] Error al cargar:', err);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
+  // ── NOTIFICACIONES ───────────────────────────────────────────────────────────
+  const fetchNotifications = async (uid) => {
+    try {
+      const [notifsRes, unreadRes] = await Promise.all([
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/notifications/user/${uid}`),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/notifications/unread/${uid}`)
+      ]);
+      if (notifsRes.ok) setNotifications(await notifsRes.json());
+      if (unreadRes.ok) { const d = await unreadRes.json(); setUnreadCount(d.count || 0); }
+    } catch {}
+  };
+
+  const handleMarkAllRead = async () => {
+    if (!user) return;
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/notifications/user/${user.id}/read-all`, { method: 'PATCH' });
+      setUnreadCount(0);
+      setNotifications(prev => prev.map(n => ({ ...n, readAt: n.readAt || new Date().toISOString() })));
+    } catch {}
+  };
+
+  const handleAnnounce = async (e) => {
+    e.preventDefault();
+    if (!announceMessage.trim()) return;
+    setAnnouncing(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/notifications/broadcast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ eventId: announceEventId, message: announceMessage })
+      });
+      const data = await res.json();
+      alert(data.message || 'Anuncio enviado');
+      setShowAnnounceModal(false);
+      setAnnounceMessage('');
+    } catch { alert('Error al enviar el anuncio'); }
+    finally { setAnnouncing(false); }
+  };
+
+  const handleRefreshAnalytics = async () => {
+    setRefreshing(true);
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/analytics/refresh`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      await fetchAnalytics();
+    } catch (err) {
+      console.error('[Analytics] Error al refrescar:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    router.push('/');
+  };
+
+  // ── CREAR EVENTO ──────────────────────────────────────────────────────────
+  const handleCreateEvent = async (e) => {
+    e.preventDefault();
+    setCreating(true);
+    try {
+      const token    = localStorage.getItem('token');
+      const location = newEvent.city ? `${newEvent.city}, ${newEvent.country}` : newEvent.country;
+      const minPrice = newEvent.categories.length > 0
+        ? Math.min(...newEvent.categories.map(c => parseFloat(c.price) || 0))
+        : parseFloat(newEvent.price) || 0;
+
+      const payload = {
+        title: newEvent.title, date: newEvent.date, location,
+        description: newEvent.description, fullDescription: newEvent.fullDescription,
+        category: newEvent.category, price: minPrice,
+        organizer: user.username, imageUrl: newEvent.imageUrl || null,
+        categories: newEvent.categories.filter(c => c.name && c.price && c.capacity).map(c => ({
+          name: c.name, price: parseFloat(c.price), capacity: parseInt(c.capacity)
+        }))
+      };
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error('Error al crear el evento');
+
+      setShowCreateModal(false);
+      setNewEvent({ ...EMPTY_EVENT, categories:[{ ...EMPTY_CATEGORY }] });
+      await fetchData(user);
+      setActiveTab('events');
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // ── EDITAR EVENTO ─────────────────────────────────────────────────────────
+  const handleOpenEdit = (event) => {
+    const [city='', ...rest] = (event.location || '').split(', ');
+    const country = rest.join(', ') || 'Colombia';
+    setEditForm({
+      ...event,
+      country, city,
+      imageUrl: event.imageUrl || '',
+      categories: event.categories && event.categories.length > 0
+        ? event.categories.map(c => ({ name: c.name, price: String(c.price), capacity: String(c.capacity), sold: c.sold || 0 }))
+        : [{ ...EMPTY_CATEGORY }]
+    });
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const token    = localStorage.getItem('token');
+      const location = editForm.city ? `${editForm.city}, ${editForm.country}` : editForm.country;
+      const minPrice = editForm.categories.length > 0
+        ? Math.min(...editForm.categories.map(c => parseFloat(c.price) || 0))
+        : parseFloat(editForm.price) || 0;
+
+      const payload = {
+        title: editForm.title, date: editForm.date, location,
+        description: editForm.description, fullDescription: editForm.fullDescription,
+        category: editForm.category, price: minPrice,
+        organizer: user.username, imageUrl: editForm.imageUrl || null,
+        categories: editForm.categories.filter(c => c.name && c.price && c.capacity).map(c => ({
+          name: c.name, price: parseFloat(c.price), capacity: parseInt(c.capacity), sold: c.sold || 0
+        }))
+      };
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events/${editForm.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error('Error al guardar los cambios');
+
+      setShowEditModal(false);
+      setEditForm(null);
+      await fetchData(user);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── ELIMINAR EVENTO ───────────────────────────────────────────────────────
+  const handleDeleteEvent = async (id) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar este evento?')) return;
+    try {
+      const token    = localStorage.getItem('token');
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events/${id}`, {
+        method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) { setMyEvents(myEvents.filter(e => e.id !== id)); }
+    } catch { alert('Error al eliminar'); }
+  };
+
+  // ── GUARDAR WALLET ────────────────────────────────────────────────────────
+  const handleSaveWallet = async (eventId) => {
+    setSavingWallet(eventId);
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events/${eventId}/wallet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(walletForms[eventId] || {})
+      });
+      alert('Cuenta guardada correctamente.');
+    } catch { alert('Error al guardar la cuenta.'); }
+    finally { setSavingWallet(null); }
+  };
+
+  if (!user) return null;
+
+  // ── HELPERS FORMULARIOS ───────────────────────────────────────────────────
+  const handleNewEventChange  = (field, val) => setNewEvent(p => ({ ...p, [field]: val }));
+  const handleNewCatChange    = (idx, field, val) => setNewEvent(p => {
     const cats = [...p.categories]; cats[idx] = { ...cats[idx], [field]: val }; return { ...p, categories: cats };
   });
-  const handleAddNewCat = () => setNewEvent(p => ({ ...p, categories: [...p.categories, { ...EMPTY_CATEGORY }] }));
+  const handleAddNewCat    = () => setNewEvent(p => ({ ...p, categories: [...p.categories, { ...EMPTY_CATEGORY }] }));
   const handleRemoveNewCat = (idx) => setNewEvent(p => ({ ...p, categories: p.categories.filter((_, i) => i !== idx) }));
 
-  const handleEditChange = (field, val) => setEditForm(p => ({ ...p, [field]: val }));
+  const handleEditChange   = (field, val) => setEditForm(p => ({ ...p, [field]: val }));
   const handleEditCatChange = (idx, field, val) => setEditForm(p => {
     const cats = [...p.categories]; cats[idx] = { ...cats[idx], [field]: val }; return { ...p, categories: cats };
   });
-  const handleAddEditCat = () => setEditForm(p => ({ ...p, categories: [...p.categories, { ...EMPTY_CATEGORY }] }));
+  const handleAddEditCat    = () => setEditForm(p => ({ ...p, categories: [...p.categories, { ...EMPTY_CATEGORY }] }));
   const handleRemoveEditCat = (idx) => setEditForm(p => ({ ...p, categories: p.categories.filter((_, i) => i !== idx) }));
 
   // ── TABS ──────────────────────────────────────────────────────────────────
@@ -420,10 +530,53 @@ export default function Dashboard() {
   ];
   const tabs = user.role === 'admin' ? adminTabs : userTabs;
 
+  // ── HELPERS UI ────────────────────────────────────────────────────────────
+  const fmt = (n) => Number(n || 0).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
+  const maxRevenue = analyticsEvents.length > 0
+    ? Math.max(...analyticsEvents.map(e => parseFloat(e.totalRevenue || 0)))
+    : 1;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
 
-      {/* ── MODAL CREAR ─────────────────────────────────────────────────── */}
+      {/* ── MODAL ANUNCIO (admin) ────────────────────────────────────────── */}
+      {showAnnounceModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Enviar Anuncio</h2>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">Se enviará a todos los asistentes con ticket.</p>
+              </div>
+              <button onClick={() => { setShowAnnounceModal(false); setAnnounceMessage(''); }}
+                className="p-2 hover:bg-white rounded-full transition-colors">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+            <form onSubmit={handleAnnounce} className="p-6 space-y-4">
+              <textarea required rows={4}
+                className="input-field bg-slate-50 border-none rounded-2xl py-3.5 font-bold resize-none w-full text-sm"
+                placeholder="Escribe tu mensaje para los asistentes..."
+                value={announceMessage}
+                onChange={e => setAnnounceMessage(e.target.value)} />
+              <div className="flex gap-3">
+                <button type="button"
+                  onClick={() => { setShowAnnounceModal(false); setAnnounceMessage(''); }}
+                  className="flex-1 py-3 rounded-2xl font-black text-sm border-2 border-slate-100 text-slate-400 hover:bg-slate-50">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={announcing}
+                  className="flex-[2] btn-primary py-3 rounded-2xl font-black text-sm flex items-center justify-center gap-2">
+                  {announcing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {announcing ? 'Enviando...' : 'Enviar a asistentes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL CREAR ──────────────────────────────────────────────────── */}
       {showCreateModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden">
@@ -440,6 +593,7 @@ export default function Dashboard() {
               data={newEvent} onChange={handleNewEventChange}
               onCatChange={handleNewCatChange} onAddCat={handleAddNewCat} onRemoveCat={handleRemoveNewCat}
               onSubmit={handleCreateEvent} submitting={creating} submitLabel="Publicar Evento"
+              onClose={() => setShowCreateModal(false)}
             />
           </div>
         </div>
@@ -462,6 +616,7 @@ export default function Dashboard() {
               data={editForm} onChange={handleEditChange}
               onCatChange={handleEditCatChange} onAddCat={handleAddEditCat} onRemoveCat={handleRemoveEditCat}
               onSubmit={handleSaveEdit} submitting={saving} submitLabel="Guardar Cambios"
+              onClose={() => { setShowEditModal(false); setEditForm(null); }}
             />
           </div>
         </div>
@@ -478,6 +633,54 @@ export default function Dashboard() {
               <h2 className="font-extrabold text-slate-900 leading-tight text-lg">{user.username}</h2>
               <p className="text-xs font-bold text-primary-600 uppercase tracking-widest">{user.role}</p>
             </div>
+          </div>
+
+          {/* Campana de notificaciones */}
+          <div className="relative">
+            <button
+              onClick={() => setShowNotifPanel(v => !v)}
+              className="w-full flex items-center justify-between px-5 py-4 bg-white border border-slate-200 rounded-[2rem] shadow-sm hover:shadow-md transition-all">
+              <div className="flex items-center gap-3">
+                <Bell className="w-5 h-5 text-primary-500" />
+                <span className="text-sm font-bold text-slate-700">Notificaciones</span>
+              </div>
+              {unreadCount > 0 && (
+                <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {showNotifPanel && (
+              <div className="absolute left-0 right-0 top-full mt-2 z-50 bg-white border border-slate-200 rounded-[2rem] shadow-2xl overflow-hidden">
+                <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                  <span className="text-xs font-black text-slate-500 uppercase tracking-widest">Últimas notificaciones</span>
+                  {unreadCount > 0 && (
+                    <button onClick={handleMarkAllRead}
+                      className="flex items-center gap-1 text-[10px] font-black text-primary-600 hover:text-primary-700">
+                      <CheckCheck className="w-3.5 h-3.5" /> Leer todas
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
+                  {notifications.length === 0 ? (
+                    <p className="text-center text-slate-400 text-xs font-bold py-8">Sin notificaciones</p>
+                  ) : notifications.slice(0, 10).map(n => (
+                    <div key={n.id}
+                      className={`p-4 text-xs hover:bg-slate-50 transition-colors ${!n.readAt ? 'bg-primary-50/30' : ''}`}>
+                      <div className="flex items-start gap-2">
+                        {!n.readAt && <span className="w-1.5 h-1.5 bg-primary-500 rounded-full mt-1 shrink-0" />}
+                        <div className={!n.readAt ? '' : 'ml-3.5'}>
+                          <p className="font-black text-slate-800">{n.title}</p>
+                          <p className="text-slate-500 mt-0.5 leading-relaxed">{n.body}</p>
+                          <p className="text-slate-400 mt-1">{new Date(n.createdAt).toLocaleString('es-ES',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="bg-white border border-slate-200 rounded-[2rem] p-3 shadow-sm space-y-1">
@@ -587,7 +790,6 @@ export default function Dashboard() {
 
                     return (
                       <div key={event.id} className="bg-white border border-slate-200 rounded-[2rem] overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                        {/* Cabecera evento */}
                         <div className="p-6 border-b border-slate-100 flex items-center justify-between">
                           <div>
                             <h3 className="text-lg font-bold text-slate-900">{event.title}</h3>
@@ -602,13 +804,12 @@ export default function Dashboard() {
                           </div>
                         </div>
 
-                        {/* Categorías */}
                         <div className="p-6">
                           {cats.length > 0 ? (
                             <div className="space-y-3">
                               <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Tickets por categoría</p>
                               {cats.map(cat => {
-                                const pct = cat.capacity > 0 ? Math.round((cat.sold / cat.capacity) * 100) : 0;
+                                const pct       = cat.capacity > 0 ? Math.round((cat.sold / cat.capacity) * 100) : 0;
                                 const remaining = cat.capacity - cat.sold;
                                 return (
                                   <div key={cat.id} className="bg-slate-50 rounded-2xl p-4">
@@ -619,11 +820,9 @@ export default function Dashboard() {
                                           {Number(cat.price).toLocaleString('es-ES',{style:'currency',currency:'EUR'})}
                                         </span>
                                       </div>
-                                      <div className="text-right">
-                                        <span className={`text-xs font-black ${remaining === 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                          {remaining === 0 ? 'AGOTADO' : `${remaining} disponibles`}
-                                        </span>
-                                      </div>
+                                      <span className={`text-xs font-black ${remaining === 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                        {remaining === 0 ? 'AGOTADO' : `${remaining} disponibles`}
+                                      </span>
                                     </div>
                                     <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
                                       <div className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-500' : 'bg-green-500'}`}
@@ -631,7 +830,7 @@ export default function Dashboard() {
                                     </div>
                                     <div className="flex justify-between mt-1 text-[10px] font-bold text-slate-400">
                                       <span>{cat.sold} vendidos</span>
-                                      <span>{cat.capacity} total • {pct}%</span>
+                                      <span>{cat.capacity} total · {pct}%</span>
                                     </div>
                                   </div>
                                 );
@@ -646,10 +845,8 @@ export default function Dashboard() {
                           )}
                         </div>
 
-                        {/* Cuenta bancaria */}
                         <div className="border-t border-slate-100">
-                          <button
-                            onClick={() => setExpandedWallet(isExpanded ? null : event.id)}
+                          <button onClick={() => setExpandedWallet(isExpanded ? null : event.id)}
                             className="w-full p-5 flex items-center justify-between text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">
                             <div className="flex items-center gap-3">
                               <Building className="w-4 h-4 text-primary-600" />
@@ -737,9 +934,9 @@ export default function Dashboard() {
               ) : myEvents.length > 0 ? (
                 <div className="grid grid-cols-1 gap-4">
                   {myEvents.map(event => {
-                    const cats = event.categories || [];
-                    const totalSold = cats.reduce((a, c) => a + c.sold, 0);
-                    const totalCap  = cats.reduce((a, c) => a + c.capacity, 0);
+                    const cats     = event.categories || [];
+                    const totalSold= cats.reduce((a,c) => a + c.sold, 0);
+                    const totalCap = cats.reduce((a,c) => a + c.capacity, 0);
                     return (
                       <div key={event.id} className="bg-white border border-slate-200 rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-xl transition-all group">
                         <div className="flex items-center gap-6 w-full md:w-auto">
@@ -779,6 +976,10 @@ export default function Dashboard() {
                             className="flex-1 md:flex-none flex items-center justify-center gap-1 text-center px-4 py-2.5 bg-blue-50 text-blue-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-100 transition-all">
                             <Edit2 className="w-3.5 h-3.5" /> Editar
                           </button>
+                          <button onClick={() => { setAnnounceEventId(event.id); setShowAnnounceModal(true); }}
+                            className="flex-1 md:flex-none flex items-center justify-center gap-1 text-center px-4 py-2.5 bg-amber-50 text-amber-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-100 transition-all">
+                            <Megaphone className="w-3.5 h-3.5" /> Anunciar
+                          </button>
                           <button onClick={() => handleDeleteEvent(event.id)}
                             className="flex-1 md:flex-none flex items-center justify-center gap-1 text-center px-4 py-2.5 bg-red-50 text-red-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-100 transition-all">
                             <Trash2 className="w-3.5 h-3.5" /> Eliminar
@@ -801,84 +1002,205 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* TAB: ESTADÍSTICAS */}
+          {/* TAB: ESTADÍSTICAS — alimentado por analytics-service */}
           {activeTab === 'stats' && user.role === 'admin' && (
             <div className="space-y-8">
-              <div>
-                <h2 className="text-3xl font-black text-slate-900 tracking-tight">Estadísticas de Reseñas</h2>
-                <p className="text-slate-500 font-medium">Análisis de rendimiento basado en la opinión de los asistentes.</p>
+
+              {/* Cabecera */}
+              <div className="flex justify-between items-start">
+                <div>
+                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">Estadísticas</h2>
+                  <p className="text-slate-500 font-medium">Panel de analítica en tiempo real de todos tus eventos.</p>
+                  {analyticsOverview?.lastUpdated && (
+                    <p className="text-[11px] text-slate-400 font-bold mt-1">
+                      Última actualización: {new Date(analyticsOverview.lastUpdated).toLocaleString('es-ES')}
+                    </p>
+                  )}
+                </div>
+                <button onClick={handleRefreshAnalytics} disabled={refreshing || analyticsLoading}
+                  className="flex items-center gap-2 px-5 py-3 bg-primary-600 text-white rounded-2xl text-sm font-black shadow-lg shadow-primary-600/20 hover:bg-primary-700 transition-all disabled:opacity-60">
+                  <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                  {refreshing ? 'Actualizando...' : 'Actualizar datos'}
+                </button>
               </div>
-              {loading ? (
-                <div className="flex justify-center py-20"><Loader2 className="w-12 h-12 text-primary-600 animate-spin" /></div>
-              ) : eventStats.length > 0 ? (
-                <div className="grid grid-cols-1 gap-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-primary-600 rounded-[2rem] p-8 text-white shadow-xl shadow-primary-600/20">
-                      <p className="text-primary-100 text-xs font-black uppercase tracking-widest mb-2">Promedio Global</p>
-                      <div className="flex items-center gap-3">
-                        <span className="text-5xl font-black">
-                          {(eventStats.reduce((acc,curr) => acc+curr.average,0)/(eventStats.filter(e=>e.reviewCount>0).length||1)).toFixed(1)}
-                        </span>
-                        <Star className="w-8 h-8 fill-white text-white" />
-                      </div>
-                    </div>
-                    <div className="bg-white border border-slate-200 rounded-[2rem] p-8 shadow-sm">
-                      <p className="text-slate-400 text-xs font-black uppercase tracking-widest mb-2">Total Reseñas</p>
-                      <div className="flex items-center gap-3">
-                        <span className="text-5xl font-black text-slate-900">{eventStats.reduce((acc,curr) => acc+curr.reviewCount,0)}</span>
-                        <MessageSquare className="w-8 h-8 text-primary-600" />
-                      </div>
-                    </div>
-                    <div className="bg-white border border-slate-200 rounded-[2rem] p-8 shadow-sm">
-                      <p className="text-slate-400 text-xs font-black uppercase tracking-widest mb-2">Eventos Calificados</p>
-                      <div className="flex items-center gap-3">
-                        <span className="text-5xl font-black text-slate-900">{eventStats.filter(e=>e.reviewCount>0).length}</span>
-                        <Calendar className="w-8 h-8 text-primary-600" />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-white border border-slate-200 rounded-[2.5rem] overflow-hidden shadow-sm">
-                    <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                      <h3 className="font-black text-slate-900 uppercase tracking-wider text-sm">Ranking: Mejor a Peor</h3>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Basado en promedio de estrellas</span>
-                    </div>
-                    <div className="divide-y divide-slate-100">
-                      {eventStats.map((event, index) => (
-                        <div key={event.id} className="px-8 py-6 flex items-center justify-between hover:bg-slate-50 transition-colors group">
-                          <div className="flex items-center gap-6">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${
-                              index===0?'bg-yellow-100 text-yellow-700':index===1?'bg-slate-100 text-slate-600':index===2?'bg-orange-100 text-orange-700':'bg-slate-50 text-slate-400'}`}>
-                              {index+1}
-                            </div>
-                            <div>
-                              <h4 className="font-bold text-slate-900 group-hover:text-primary-600 transition-colors">{event.title}</h4>
-                              <p className="text-xs text-slate-400 font-medium">{event.date} • {event.category}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-8">
-                            <div className="text-right">
-                              <div className="flex items-center justify-end gap-1.5 mb-0.5">
-                                <span className="font-black text-slate-900">{event.average.toFixed(1)}</span>
-                                <Star className={`w-4 h-4 ${event.average>0?'text-yellow-400 fill-yellow-400':'text-slate-200'}`} />
-                              </div>
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">{event.reviewCount} reseñas</p>
-                            </div>
-                            <div className="w-32 bg-slate-100 h-2 rounded-full overflow-hidden hidden sm:block">
-                              <div className={`h-full rounded-full ${event.average>=4?'bg-green-500':event.average>=3?'bg-yellow-500':'bg-red-500'}`}
-                                style={{width:`${(event.average/5)*100}%`}} />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+
+              {analyticsLoading ? (
+                <div className="flex flex-col items-center justify-center py-20 bg-white border border-slate-200 rounded-[2.5rem] shadow-sm">
+                  <Loader2 className="w-12 h-12 text-primary-600 animate-spin mb-4" />
+                  <p className="text-slate-500 font-bold">Cargando analítica...</p>
+                  <p className="text-xs text-slate-400 mt-1">El servicio de analytics recoge datos cada 3 minutos.</p>
                 </div>
               ) : (
-                <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[3rem] p-16 text-center">
-                  <BarChart3 className="w-10 h-10 text-slate-300 mx-auto mb-6" />
-                  <h3 className="text-2xl font-black text-slate-900 mb-3 tracking-tight">No hay datos suficientes</h3>
-                  <p className="text-slate-500 mb-8 max-w-sm mx-auto font-medium">Tus eventos aún no han recibido reseñas.</p>
-                </div>
+                <>
+                  {/* KPI Cards */}
+                  {analyticsOverview ? (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-primary-600 rounded-[2rem] p-6 text-white shadow-xl shadow-primary-600/20">
+                        <div className="flex items-center gap-2 mb-3">
+                          <DollarSign className="w-5 h-5 text-primary-200" />
+                          <p className="text-primary-100 text-[10px] font-black uppercase tracking-widest">Ingresos Totales</p>
+                        </div>
+                        <p className="text-3xl font-black">{fmt(analyticsOverview.totalRevenue)}</p>
+                      </div>
+                      <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Ticket className="w-5 h-5 text-primary-400" />
+                          <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Tickets Vendidos</p>
+                        </div>
+                        <p className="text-3xl font-black text-slate-900">{analyticsOverview.totalTickets}</p>
+                        <p className="text-xs text-slate-400 font-bold mt-1">de {analyticsOverview.totalCapacity} disponibles</p>
+                      </div>
+                      <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Activity className="w-5 h-5 text-primary-400" />
+                          <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Ocupación Media</p>
+                        </div>
+                        <p className="text-3xl font-black text-slate-900">{analyticsOverview.avgOccupancy}%</p>
+                        <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2 overflow-hidden">
+                          <div className={`h-full rounded-full ${analyticsOverview.avgOccupancy >= 70 ? 'bg-green-500' : 'bg-primary-500'}`}
+                            style={{ width: `${Math.min(analyticsOverview.avgOccupancy, 100)}%` }} />
+                        </div>
+                      </div>
+                      <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Star className="w-5 h-5 text-yellow-400" />
+                          <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Valoración Media</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-3xl font-black text-slate-900">{analyticsOverview.avgRating}</p>
+                          <Star className="w-6 h-6 text-yellow-400 fill-yellow-400" />
+                        </div>
+                        <p className="text-xs text-slate-400 font-bold mt-1">{analyticsOverview.totalEvents} eventos</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-amber-700 text-sm font-bold">
+                      ⏳ El servicio de analytics está recopilando datos por primera vez. Pulsa "Actualizar datos" para forzar la recolección o espera hasta 3 minutos.
+                    </div>
+                  )}
+
+                  {/* Ranking por ingresos */}
+                  {analyticsEvents.length > 0 && (
+                    <div className="bg-white border border-slate-200 rounded-[2.5rem] overflow-hidden shadow-sm">
+                      <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <TrendingUp className="w-5 h-5 text-primary-600" />
+                          <h3 className="font-black text-slate-900 uppercase tracking-wider text-sm">Rendimiento por Evento</h3>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ingresos · Ocupación</span>
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {analyticsEvents.map((ev, index) => {
+                          const revPct = maxRevenue > 0 ? (parseFloat(ev.totalRevenue || 0) / maxRevenue) * 100 : 0;
+                          const occPct = parseFloat(ev.occupancyPct || 0);
+                          return (
+                            <div key={ev.id} className="px-8 py-5 hover:bg-slate-50 transition-colors">
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-4">
+                                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm ${
+                                    index===0?'bg-yellow-100 text-yellow-700':index===1?'bg-slate-100 text-slate-600':index===2?'bg-orange-100 text-orange-700':'bg-slate-50 text-slate-400'}`}>
+                                    {index+1}
+                                  </div>
+                                  <div>
+                                    <p className="font-bold text-slate-900 text-sm">{ev.title}</p>
+                                    <p className="text-[10px] text-slate-400 font-medium">{ev.eventDate} · {ev.category} · {ev.location}</p>
+                                  </div>
+                                </div>
+                                <div className="text-right shrink-0 ml-4">
+                                  <p className="font-black text-primary-600 text-sm">{fmt(ev.totalRevenue)}</p>
+                                  <p className="text-[10px] text-slate-400 font-bold">{ev.totalSold} / {ev.totalCapacity} tickets</p>
+                                </div>
+                              </div>
+                              {/* Barra de ingresos (relativa al mayor) */}
+                              <div className="space-y-1.5">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-[10px] w-16 text-slate-400 font-bold">Ingresos</span>
+                                  <div className="flex-1 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                    <div className="h-full bg-primary-500 rounded-full transition-all"
+                                      style={{ width: `${revPct}%` }} />
+                                  </div>
+                                  <span className="text-[10px] text-slate-400 font-bold w-8 text-right">{Math.round(revPct)}%</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-[10px] w-16 text-slate-400 font-bold">Ocupación</span>
+                                  <div className="flex-1 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full transition-all ${occPct >= 80 ? 'bg-green-500' : occPct >= 40 ? 'bg-yellow-500' : 'bg-red-400'}`}
+                                      style={{ width: `${Math.min(occPct, 100)}%` }} />
+                                  </div>
+                                  <span className="text-[10px] text-slate-400 font-bold w-8 text-right">{occPct}%</span>
+                                </div>
+                              </div>
+                              {ev.reviewCount > 0 && (
+                                <div className="flex items-center gap-1.5 mt-2">
+                                  <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+                                  <span className="text-[10px] font-bold text-slate-500">{parseFloat(ev.avgRating || 0).toFixed(1)} · {ev.reviewCount} reseñas</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Ranking de reseñas (datos existentes) */}
+                  {eventStats.length > 0 && (
+                    <div className="bg-white border border-slate-200 rounded-[2.5rem] overflow-hidden shadow-sm">
+                      <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <MessageSquare className="w-5 h-5 text-primary-600" />
+                          <h3 className="font-black text-slate-900 uppercase tracking-wider text-sm">Ranking de Reseñas</h3>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Mejor a Peor</span>
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {eventStats.map((event, index) => (
+                          <div key={event.id} className="px-8 py-6 flex items-center justify-between hover:bg-slate-50 transition-colors group">
+                            <div className="flex items-center gap-6">
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${
+                                index===0?'bg-yellow-100 text-yellow-700':index===1?'bg-slate-100 text-slate-600':index===2?'bg-orange-100 text-orange-700':'bg-slate-50 text-slate-400'}`}>
+                                {index+1}
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-slate-900 group-hover:text-primary-600 transition-colors">{event.title}</h4>
+                                <p className="text-xs text-slate-400 font-medium">{event.date} · {event.category}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-8">
+                              <div className="text-right">
+                                <div className="flex items-center justify-end gap-1.5 mb-0.5">
+                                  <span className="font-black text-slate-900">{event.average.toFixed(1)}</span>
+                                  <Star className={`w-4 h-4 ${event.average>0?'text-yellow-400 fill-yellow-400':'text-slate-200'}`} />
+                                </div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">{event.reviewCount} reseñas</p>
+                              </div>
+                              <div className="w-32 bg-slate-100 h-2 rounded-full overflow-hidden hidden sm:block">
+                                <div className={`h-full rounded-full ${event.average>=4?'bg-green-500':event.average>=3?'bg-yellow-500':'bg-red-500'}`}
+                                  style={{width:`${(event.average/5)*100}%`}} />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Estado vacío */}
+                  {!analyticsOverview && analyticsEvents.length === 0 && eventStats.length === 0 && (
+                    <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[3rem] p-16 text-center">
+                      <BarChart3 className="w-10 h-10 text-slate-300 mx-auto mb-6" />
+                      <h3 className="text-2xl font-black text-slate-900 mb-3 tracking-tight">Sin datos todavía</h3>
+                      <p className="text-slate-500 mb-8 max-w-sm mx-auto font-medium">
+                        El analytics-service recopila datos cada 3 minutos. Crea eventos y vende tickets para ver métricas aquí.
+                      </p>
+                      <button onClick={handleRefreshAnalytics} disabled={refreshing}
+                        className="btn-primary py-4 px-10 font-black text-sm uppercase flex items-center gap-2 mx-auto">
+                        <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                        Forzar recolección ahora
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -913,7 +1235,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Estilos auxiliares inline para las etiquetas del formulario */}
       <style jsx global>{`
         .form-label { display: block; font-size: 10px; font-weight: 900; color: #94a3b8; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.1em; }
         .form-icon  { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: #a78bfa; }
