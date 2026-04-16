@@ -1,9 +1,30 @@
 const express = require('express');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 const { Sequelize, DataTypes } = require('sequelize');
 
 const app = express();
 const PORT = process.env.PORT || 5002;
+const JWT_SECRET = process.env.JWT_SECRET || 'eventhive_secret_key_2026';
+
+function verifyAdmin(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) return res.status(401).json({ error: 'No autorizado. Se requiere token.' });
+
+  const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Token no proporcionado.' });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.role !== 'admin') {
+      return res.status(403).json({ error: 'Acceso denegado. Solo administradores pueden realizar esta acción.' });
+    }
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Token inválido o expirado.' });
+  }
+}
 
 app.use(cors());
 app.use(express.json());
@@ -71,7 +92,7 @@ app.get('/organizer/:username', async (req, res) => {
   }
 });
 
-app.post('/', async (req, res) => {
+app.post('/', verifyAdmin, async (req, res) => {
   try {
     const event = await Event.create(req.body);
     res.status(201).json(event);
@@ -89,7 +110,7 @@ app.get('/:id', async (req, res) => {
   }
 });
 
-app.delete('/:id', async (req, res) => {
+app.delete('/:id', verifyAdmin, async (req, res) => {
   try {
     const result = await Event.destroy({ where: { id: req.params.id } });
     if (result) {

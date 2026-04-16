@@ -50,8 +50,8 @@ export default function Dashboard() {
       const eventData = await eventRes.json();
       setMyEvents(eventData);
 
-      // Cargar Estadísticas (si es organizador)
-      if (userData.role === 'organizador' && eventData.length > 0) {
+      // Cargar Estadísticas (si es admin)
+      if (userData.role === 'admin' && eventData.length > 0) {
         const eventIds = eventData.map(e => e.id).join(',');
         const statsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/reviews/stats?eventIds=${eventIds}`);
         const statsData = await statsRes.json();
@@ -79,8 +79,10 @@ export default function Dashboard() {
     if (!confirm('¿Estás seguro de que quieres eliminar este evento?')) return;
     
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
         setMyEvents(myEvents.filter(e => e.id !== id));
@@ -101,9 +103,13 @@ export default function Dashboard() {
     setCreating(true);
 
     try {
+      const token = localStorage.getItem('token');
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           ...newEvent,
           organizer: user.username, // El organizador es el usuario logueado
@@ -284,8 +290,8 @@ export default function Dashboard() {
           <div className="bg-white border border-slate-200 rounded-[2rem] p-3 shadow-sm space-y-1">
             {[
               { id: 'tickets', label: 'Mis Tickets', icon: Ticket },
-              { id: 'events', label: 'Mis Eventos', icon: Calendar },
-              { id: 'stats', label: 'Estadísticas', icon: BarChart3, show: user.role === 'organizador' },
+              { id: 'events', label: 'Mis Eventos', icon: Calendar, show: user.role === 'admin' },
+              { id: 'stats', label: 'Estadísticas', icon: BarChart3, show: user.role === 'admin' },
               { id: 'profile', label: 'Mi Perfil', icon: User },
               { id: 'settings', label: 'Ajustes', icon: Settings },
             ].filter(item => item.show !== false).map((item) => (
