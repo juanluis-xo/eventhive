@@ -10,6 +10,23 @@ const PORT       = process.env.PORT        || 5007;
 const JWT_SECRET = process.env.JWT_SECRET  || 'eventhive_secret_key_2026';
 const EVENTS_URL  = process.env.EVENTS_SERVICE_URL  || 'http://events-service:5002';
 const TICKETS_URL = process.env.TICKETS_SERVICE_URL || 'http://ticket-service:5003';
+const USERS_URL   = process.env.USER_SERVICE_URL    || 'http://user-service:5001';
+
+// ── Resend (correos reales) ─────────────────────────────────────────────────
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const FROM_EMAIL     = process.env.FROM_EMAIL     || 'onboarding@resend.dev';
+let resend = null;
+if (RESEND_API_KEY) {
+  try {
+    const { Resend } = require('resend');
+    resend = new Resend(RESEND_API_KEY);
+    console.log(`[Notifications] ✅ Resend activo — enviando desde: ${FROM_EMAIL}`);
+  } catch (e) {
+    console.error('[Notifications] ⚠️  Error cargando Resend SDK:', e.message);
+  }
+} else {
+  console.log('[Notifications] ℹ️  Sin RESEND_API_KEY — correos en modo simulado.');
+}
 
 app.use(cors());
 app.use(express.json());
@@ -83,13 +100,74 @@ const safeGet = async (dockerUrl, localhostPort, path) => {
   catch { return await axios.get(`http://localhost:${localhostPort}${path}`); }
 };
 
-// Email: real si hay credenciales, simulado si no
+// Plantilla HTML del correo
+const buildEmailHtml = (subject, body) => `
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:30px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:32px 40px;text-align:center;">
+            <h1 style="margin:0;color:#fff;font-size:24px;font-weight:700;">${subject}</h1>
+            <p style="margin:6px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">EventHive · Plataforma de Eventos</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:32px 40px;">
+            <p style="margin:0;font-size:15px;color:#374151;line-height:1.7;">${body}</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 40px 28px;text-align:center;">
+            <a href="http://localhost:3000/dashboard" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;text-decoration:none;padding:12px 30px;border-radius:8px;font-size:14px;font-weight:600;">
+              Abrir EventHive
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 40px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#9ca3af;">© ${new Date().getFullYear()} EventHive · No respondas a este correo</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+// Email: primero Resend, luego SMTP, sino simulado
 const sendEmail = async (notificationId, toEmail, subject, body) => {
+  const html = buildEmailHtml(subject, body);
+
+  // 1) Preferencia: Resend
+  if (resend) {
+    try {
+      const result = await resend.emails.send({
+        from: FROM_EMAIL,
+        to:   [toEmail],
+        subject,
+        html
+      });
+      // Resend devuelve { data, error } — chequear error
+      if (result.error) throw new Error(result.error.message || JSON.stringify(result.error));
+      await EmailLog.create({ notificationId, toEmail, subject, body, status: 'sent' });
+      console.log(`[Notifications] ✉️  EMAIL ENVIADO (Resend) → ${toEmail}  id=${result.data?.id || 'n/a'}`);
+      return;
+    } catch (e) {
+      await EmailLog.create({ notificationId, toEmail, subject, body, status: 'failed' });
+      console.error(`[Notifications] ❌ Resend error al enviar a ${toEmail}: ${e.message}`);
+      return; // no caemos a SMTP si Resend falla por un error de cuenta/dominio
+    }
+  }
+
+  // 2) Fallback: SMTP (Nodemailer) si hay EMAIL_USER
   if (process.env.EMAIL_USER) {
-    // Envío real con SMTP (requiere EMAIL_USER, EMAIL_PASS, EMAIL_HOST en .env)
     try {
       const nodemailer = require('nodemailer');
-      const transporter = nodemailer.createTransporter({
+      const transporter = nodemailer.createTransport({     // ← fix: createTransport (no createTransporter)
         host: process.env.EMAIL_HOST || 'smtp.gmail.com',
         port: parseInt(process.env.EMAIL_PORT || '587'),
         secure: false,
@@ -97,23 +175,34 @@ const sendEmail = async (notificationId, toEmail, subject, body) => {
       });
       await transporter.sendMail({
         from: `EventHive <${process.env.EMAIL_USER}>`,
-        to: toEmail, subject,
-        html: `<div style="font-family:sans-serif;max-width:520px;margin:auto">
-          <h2 style="color:#7c3aed">${subject}</h2>
-          <p>${body}</p>
-          <p style="color:#aaa;font-size:12px">EventHive · No respondas a este correo</p>
-        </div>`
+        to: toEmail, subject, html
       });
       await EmailLog.create({ notificationId, toEmail, subject, body, status: 'sent' });
-      console.log(`[Notifications] EMAIL ENVIADO → ${toEmail}`);
+      console.log(`[Notifications] ✉️  EMAIL ENVIADO (SMTP) → ${toEmail}`);
+      return;
     } catch (e) {
       await EmailLog.create({ notificationId, toEmail, subject, body, status: 'failed' });
-      console.error(`[Notifications] Email error: ${e.message}`);
+      console.error(`[Notifications] ❌ SMTP error: ${e.message}`);
+      return;
     }
-  } else {
-    // Simulación: se guarda en BD (evidencia para el profe)
-    await EmailLog.create({ notificationId, toEmail, subject, body, status: 'simulated' });
-    console.log(`[Notifications] EMAIL SIMULADO → ${toEmail} | ${subject}`);
+  }
+
+  // 3) Sin proveedor → simulado (evidencia para el profe)
+  await EmailLog.create({ notificationId, toEmail, subject, body, status: 'simulated' });
+  console.log(`[Notifications] 📝 EMAIL SIMULADO → ${toEmail} | ${subject}`);
+};
+
+// Obtener email del usuario desde user-service (con fallback)
+const getUserEmail = async (userId) => {
+  if (!userId) return null;
+  try {
+    const res = await axios.get(`${USERS_URL}/profile/${userId}`).catch(() =>
+      axios.get(`http://localhost:5001/profile/${userId}`)
+    );
+    return res.data?.email || null;
+  } catch (e) {
+    console.log(`[Notifications] No se pudo obtener email de userId=${userId}: ${e.message}`);
+    return null;
   }
 };
 
@@ -148,7 +237,15 @@ const dispatch = async ({ userId, eventId, ticketId, type, title, body, email })
     userId, eventId, ticketId, type, title, body,
     channel: 'in-app', status: 'sent'
   });
-  if (email) await sendEmail(notif.id, email, title, body);
+
+  // Si no nos pasaron email, lo buscamos en user-service
+  const targetEmail = email || await getUserEmail(userId);
+  if (targetEmail) {
+    await sendEmail(notif.id, targetEmail, title, body);
+  } else {
+    console.log(`[Notifications] Sin email para userId=${userId} — solo push/in-app`);
+  }
+
   await sendPush(userId, title, body, {
     type,
     eventId:  String(eventId  || ''),

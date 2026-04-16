@@ -67,6 +67,19 @@ app.post('/login', async (req, res) => {
   }
 });
 
+// Perfil público de un usuario por ID (usado internamente por otros microservicios)
+app.get('/profile/:id', async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id, {
+      attributes: ['id', 'username', 'email', 'role']   // nunca devolvemos password
+    });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 sequelize.sync().then(() => {
   app.listen(PORT, () => console.log(`User Service running on port ${PORT}`));
 }).catch(err => console.error('Database connection failed:', err));
