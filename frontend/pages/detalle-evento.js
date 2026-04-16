@@ -12,6 +12,7 @@ export default function DetalleEvento() {
   const [purchased, setPurchased] = useState(false);
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(null);
 
   // Estados para reseñas
   const [reviewsData, setReviewsData] = useState({ count: 0, average: 0, reviews: [] });
@@ -104,19 +105,21 @@ export default function DetalleEvento() {
 
   const handleBuyTicket = async () => {
     const savedUser = localStorage.getItem('user');
-    if (!savedUser) {
-      router.push('/login');
+    if (!savedUser) { router.push('/login'); return; }
+
+    const cats = event.categories || [];
+    if (cats.length > 0 && !selectedCategory) {
+      alert('Por favor selecciona una categoría de ticket antes de continuar.');
       return;
     }
 
-    // Redirigir a la nueva página de pago
+    const price = selectedCategory ? selectedCategory.price : event.price;
+    const categoryId = selectedCategory ? selectedCategory.id : null;
+    const categoryName = selectedCategory ? selectedCategory.name : null;
+
     router.push({
       pathname: '/payment',
-      query: { 
-        eventId: event.id,
-        price: event.price,
-        title: event.title
-      }
+      query: { eventId: event.id, price, title: event.title, categoryId, categoryName }
     });
   };
 
@@ -399,10 +402,50 @@ export default function DetalleEvento() {
             <div className="sticky top-28 bg-white border border-slate-200 rounded-3xl p-8 shadow-xl shadow-slate-200/50 overflow-hidden">
                <div className="absolute top-0 right-0 w-24 h-24 bg-primary-500/5 -mr-8 -mt-8 rounded-full blur-2xl"></div>
                <div className="mb-6 relative">
-                 <span className="text-slate-500 text-sm font-medium">Precio por ticket</span>
-                 <div className="text-4xl font-extrabold text-slate-900 tracking-tight">
-                   {Number(event.price).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
-                 </div>
+                 {event.categories && event.categories.length > 0 ? (
+                   <div>
+                     <span className="text-slate-500 text-sm font-medium block mb-3">Selecciona tu categoría</span>
+                     <div className="space-y-2 mb-4">
+                       {event.categories.map(cat => {
+                         const remaining = cat.capacity - cat.sold;
+                         const soldOut = remaining <= 0;
+                         const isSelected = selectedCategory?.id === cat.id;
+                         return (
+                           <button key={cat.id} type="button" disabled={soldOut}
+                             onClick={() => setSelectedCategory(isSelected ? null : cat)}
+                             className={`w-full flex items-center justify-between p-3 rounded-2xl border-2 transition-all text-left ${
+                               soldOut ? 'opacity-50 cursor-not-allowed border-slate-100 bg-slate-50' :
+                               isSelected ? 'border-primary-600 bg-primary-50' : 'border-slate-100 hover:border-primary-200 hover:bg-slate-50'
+                             }`}>
+                             <div>
+                               <span className="font-bold text-slate-900 text-sm">{cat.name}</span>
+                               {soldOut ? (
+                                 <span className="ml-2 text-[10px] font-black text-red-500 uppercase bg-red-50 px-1.5 py-0.5 rounded">Agotado</span>
+                               ) : (
+                                 <span className="ml-2 text-[10px] text-slate-400 font-bold">{remaining} disponibles</span>
+                               )}
+                             </div>
+                             <span className="font-black text-primary-600">
+                               {Number(cat.price).toLocaleString('es-ES',{style:'currency',currency:'EUR'})}
+                             </span>
+                           </button>
+                         );
+                       })}
+                     </div>
+                     {selectedCategory && (
+                       <div className="text-2xl font-extrabold text-slate-900 tracking-tight">
+                         {Number(selectedCategory.price).toLocaleString('es-ES',{style:'currency',currency:'EUR'})}
+                       </div>
+                     )}
+                   </div>
+                 ) : (
+                   <div>
+                     <span className="text-slate-500 text-sm font-medium">Precio por ticket</span>
+                     <div className="text-4xl font-extrabold text-slate-900 tracking-tight">
+                       {Number(event.price).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                     </div>
+                   </div>
+                 )}
                </div>
 
                {purchased ? (

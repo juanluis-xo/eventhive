@@ -10,7 +10,6 @@ const EVENTS_SERVICE_URL = process.env.EVENTS_SERVICE_URL || 'http://events-serv
 app.use(cors());
 app.use(express.json());
 
-// Log de depuración para ver qué llega exactamente
 app.use((req, res, next) => {
   console.log(`[TicketService] RECIBIDO: ${req.method} ${req.url}`);
   next();
@@ -24,47 +23,62 @@ const sequelize = new Sequelize(
 );
 
 const Ticket = sequelize.define('Ticket', {
-  userId: { type: DataTypes.INTEGER, allowNull: false },
-  eventId: { type: DataTypes.INTEGER, allowNull: false },
-  purchaseDate: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+  userId:       { type: DataTypes.INTEGER, allowNull: false },
+  eventId:      { type: DataTypes.INTEGER, allowNull: false },
+  categoryId:   { type: DataTypes.INTEGER, allowNull: true },
+  purchaseDate: { type: DataTypes.DATE,    defaultValue: DataTypes.NOW }
 });
 
-// 1. RUTA DE DETALLES
+// Helper de fallback Docker → localhost
+const getEvent = async (eventId) => {
+  try {
+    return await axios.get(`${EVENTS_SERVICE_URL}/${eventId}`);
+  } catch {
+    return await axios.get(`http://localhost:5002/${eventId}`);
+  }
+};
+
+// 1. Estadísticas de tickets por evento (para Cartera del admin)
+app.get('/event-stats/:eventId', async (req, res) => {
+  try {
+    const tickets = await Ticket.findAll({ where: { eventId: req.params.eventId } });
+    const byCategory = {};
+    tickets.forEach(t => {
+      const key = t.categoryId ? String(t.categoryId) : 'sin_categoria';
+      byCategory[key] = (byCategory[key] || 0) + 1;
+    });
+    res.json({ total: tickets.length, byCategory });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. Detalles de un ticket
 app.get('/details/:id', async (req, res) => {
   try {
-    const ticketId = req.params.id;
-    const ticket = await Ticket.findByPk(ticketId);
+    const ticket = await Ticket.findByPk(req.params.id);
     if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' });
-
     try {
-      let eventUrl = `${EVENTS_SERVICE_URL}/${ticket.eventId}`;
-      const eventRes = await axios.get(eventUrl).catch(async () => {
-        const localUrl = `http://localhost:5002/${ticket.eventId}`;
-        return await axios.get(localUrl);
-      });
-      res.json({ id: ticket.id, purchaseDate: ticket.purchaseDate, userId: ticket.userId, event: eventRes.data });
-    } catch (e) {
-      res.json({ id: ticket.id, purchaseDate: ticket.purchaseDate, userId: ticket.userId, event: { title: "Evento no disponible" } });
+      const eventRes = await getEvent(ticket.eventId);
+      res.json({ id: ticket.id, purchaseDate: ticket.purchaseDate, userId: ticket.userId, categoryId: ticket.categoryId, event: eventRes.data });
+    } catch {
+      res.json({ id: ticket.id, purchaseDate: ticket.purchaseDate, userId: ticket.userId, categoryId: ticket.categoryId, event: { title: "Evento no disponible" } });
     }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// 2. RUTA DE USUARIO (DASHBOARD)
+// 3. Tickets de un usuario (dashboard)
 app.get('/user/:userId', async (req, res) => {
   try {
     const tickets = await Ticket.findAll({ where: { userId: req.params.userId } });
     const ticketsWithDetails = await Promise.all(tickets.map(async (t) => {
       try {
-        let eventUrl = `${EVENTS_SERVICE_URL}/${t.eventId}`;
-        const eventRes = await axios.get(eventUrl).catch(async () => {
-          const localUrl = `http://localhost:5002/${t.eventId}`;
-          return await axios.get(localUrl);
-        });
-        return { id: t.id, purchaseDate: t.purchaseDate, event: eventRes.data };
-      } catch (e) {
-        return { id: t.id, purchaseDate: t.purchaseDate, event: { title: "Evento no disponible" } };
+        const eventRes = await getEvent(t.eventId);
+        return { id: t.id, purchaseDate: t.purchaseDate, categoryId: t.categoryId, event: eventRes.data };
+      } catch {
+        return { id: t.id, purchaseDate: t.purchaseDate, categoryId: t.categoryId, event: { title: "Evento no disponible" } };
       }
     }));
     res.json(ticketsWithDetails);
@@ -73,26 +87,30 @@ app.get('/user/:userId', async (req, res) => {
   }
 });
 
-// 3. RUTA COMPRAR
+// 4. Comprar ticket
 app.post('/', async (req, res) => {
   try {
     const ticket = await Ticket.create(req.body);
+    // Si tiene categoryId, incrementar sold en events-service
+    if (req.body.categoryId) {
+      try {
+        const incUrl = `${EVENTS_SERVICE_URL}/categories/${req.body.categoryId}/increment`;
+        await axios.patch(incUrl).catch(() => axios.patch(`http://localhost:5002/categories/${req.body.categoryId}/increment`));
+      } catch (e) {
+        console.log('[TicketService] No se pudo incrementar sold de categoría:', e.message);
+      }
+    }
     res.status(201).json(ticket);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-// CAPTURADOR DE 404 PARA DIAGNÓSTICO EN TICKET SERVICE
 app.use((req, res) => {
   console.log(`[TicketService] 404 en: ${req.method} ${req.url}`);
-  res.status(404).json({ 
-    error: 'Ruta no encontrada en TICKET SERVICE',
-    urlReceived: req.url,
-    method: req.method
-  });
+  res.status(404).json({ error: 'Ruta no encontrada en TICKET SERVICE', urlReceived: req.url });
 });
 
-sequelize.sync().then(() => {
+sequelize.sync({ alter: true }).then(() => {
   app.listen(PORT, () => console.log(`Ticket Service running on port ${PORT}`));
 }).catch(err => console.error('Database connection failed:', err));

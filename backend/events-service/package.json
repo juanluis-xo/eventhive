@@ -6,7 +6,8 @@
     "express": "^4.18.2",
     "sequelize": "^6.32.1",
     "mysql2": "^3.4.0",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "jsonwebtoken": "^9.0.0"
   },
   "scripts": {
     "start": "node index.js"

@@ -13,7 +13,8 @@ export default function Navbar() {
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
     if (savedUser) setUser(JSON.parse(savedUser));
-  }, []);
+    else setUser(null);
+  }, [router.pathname]);
 
   // Cerrar dropdown al hacer click fuera
   useEffect(() => {

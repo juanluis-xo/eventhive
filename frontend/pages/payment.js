@@ -6,7 +6,7 @@ import { PayPalButtons } from '@paypal/react-paypal-js';
 
 export default function Payment() {
   const router = useRouter();
-  const { eventId, price, title } = router.query;
+  const { eventId, price, title, categoryId, categoryName } = router.query;
   const [method, setMethod] = useState('credit_card');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -45,7 +45,8 @@ export default function Payment() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          eventId: parseInt(eventId)
+          eventId: parseInt(eventId),
+          categoryId: categoryId ? parseInt(categoryId) : null
         }),
       });
 
@@ -80,6 +81,12 @@ export default function Payment() {
                   <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Evento</p>
                   <p className="font-bold text-lg leading-tight">{title}</p>
                 </div>
+                {categoryName && (
+                  <div>
+                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Categoría</p>
+                    <p className="font-bold text-primary-400">{categoryName}</p>
+                  </div>
+                )}
                 <div>
                   <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Total a pagar</p>
                   <p className="text-3xl font-black text-primary-400">
