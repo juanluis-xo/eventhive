@@ -40,14 +40,28 @@ function EventForm({ data, onChange, onCatChange, onAddCat, onRemoveCat, onSubmi
   return (
     <form onSubmit={onSubmit} className="p-8 max-h-[72vh] overflow-y-auto custom-scrollbar space-y-5">
 
-      {/* Título */}
-      <div>
-        <label className="form-label">Título del Evento</label>
-        <div className="relative">
-          <Info className="form-icon" />
-          <input type="text" required className="input-field pl-10 bg-slate-50 border-none rounded-2xl py-3.5 font-bold"
-            placeholder="Ej: Festival de Música 2026"
-            value={data.title} onChange={e => onChange('title', e.target.value)} />
+      {/* Título + Tipo de Evento en la misma fila — visible desde el inicio */}
+      <div className="grid grid-cols-[1fr_auto] gap-4 items-end">
+        <div>
+          <label className="form-label">Título del Evento</label>
+          <div className="relative">
+            <Info className="form-icon" />
+            <input type="text" required className="input-field pl-10 bg-slate-50 border-none rounded-2xl py-3.5 font-bold"
+              placeholder="Ej: Festival de Música 2026"
+              value={data.title} onChange={e => onChange('title', e.target.value)} />
+          </div>
+        </div>
+        <div className="w-44">
+          <label className="form-label">Tipo de Evento</label>
+          <div className="relative">
+            <Tag className="form-icon" />
+            <select className="input-field pl-10 bg-slate-50 border-none rounded-2xl py-3.5 font-bold appearance-none"
+              value={data.category} onChange={e => onChange('category', e.target.value)}>
+              {['Tecnología','Música','Diseño','Emprendimiento','Deportes','Culinaria'].map(c =>
+                <option key={c}>{c}</option>
+              )}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -100,20 +114,6 @@ function EventForm({ data, onChange, onCatChange, onAddCat, onRemoveCat, onSubmi
           <img src={data.imageUrl} alt="Preview" className="mt-2 w-full h-32 object-cover rounded-xl border border-slate-200"
             onError={e => e.target.style.display='none'} />
         )}
-      </div>
-
-      {/* Tipo de evento */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="form-label">Tipo de Evento</label>
-          <div className="relative">
-            <Tag className="form-icon" />
-            <select className="input-field pl-10 bg-slate-50 border-none rounded-2xl py-3.5 font-bold appearance-none"
-              value={data.category} onChange={e => onChange('category', e.target.value)}>
-              {['Tecnología','Música','Diseño','Emprendimiento','Deportes','Culinaria'].map(c => <option key={c}>{c}</option>)}
-            </select>
-          </div>
-        </div>
       </div>
 
       {/* Descripciones */}

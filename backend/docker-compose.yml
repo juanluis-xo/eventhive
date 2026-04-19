@@ -238,6 +238,19 @@ services:
     ports:
       - "5006:5006"
 
+  # ─── Base de Datos del Mobile BFF ─────────────────────────────────────────
+  mobile-bff-db:
+    image: mysql:8.0
+    container_name: mobile-bff-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: mobile_bff_db
+    ports:
+      - "3315:3306"
+    volumes:
+      - mobile_bff_data:/var/lib/mysql
+
   # ─── Mobile BFF (Backend for Frontend) ────────────────────────────────────
   mobile-bff:
     build: ./mobile-bff
@@ -245,6 +258,12 @@ services:
     restart: always
     environment:
       PORT: 5008
+      # Base de datos propia (Device, MobilePreference, ApiMetric)
+      DB_HOST: mobile-bff-db
+      DB_USER: root
+      DB_PASS: root
+      DB_NAME: mobile_bff_db
+      # URLs de los demás microservicios
       USER_SERVICE_URL:         http://user-service:5001
       EVENTS_SERVICE_URL:       http://events-service:5002
       TICKETS_SERVICE_URL:      http://ticket-service:5003
@@ -254,6 +273,7 @@ services:
       # URL base de la app web (para generar los links de verificación QR)
       APP_URL: http://localhost:3000
     depends_on:
+      - mobile-bff-db
       - user-service
       - events-service
       - ticket-service
@@ -297,3 +317,4 @@ volumes:
   payment_data:
   notifications_data:
   analytics_data:
+  mobile_bff_data:

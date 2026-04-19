@@ -31,16 +31,16 @@ function ticketCode(ticket) {
 }
 
 /* ─── Genera HTML autónomo para la ventana de impresión ─────────── */
-function buildPrintHTML({ ticket, username, qrSrc, code, purchaseDate }) {
+function buildPrintHTML({ ticket, username, qrSrc, code, purchaseDate, categoryName }) {
   const { event } = ticket;
 
   const blocks = [
-    { label: 'ASISTENTE',    value: username,      mono: false },
-    { label: 'Nº DE TICKET', value: code,           mono: true  },
-    { label: 'UBICACIÓN',    value: event.location, mono: false },
-    { label: 'FECHA',        value: event.date,     mono: false },
-    { label: 'COMPRA',       value: purchaseDate,   mono: false },
-    { label: 'SECCIÓN',      value: 'Premium',      mono: false },
+    { label: 'ASISTENTE',    value: username,        mono: false },
+    { label: 'Nº DE TICKET', value: code,             mono: true  },
+    { label: 'UBICACIÓN',    value: event.location,  mono: false },
+    { label: 'FECHA',        value: event.date,       mono: false },
+    { label: 'COMPRA',       value: purchaseDate,     mono: false },
+    { label: 'SECCIÓN',      value: categoryName || 'General', mono: false },
   ];
 
   const blockHTMLs = blocks.map(b => `
@@ -143,7 +143,7 @@ function buildPrintHTML({ ticket, username, qrSrc, code, purchaseDate }) {
     <div class="header">
       <div class="badge-section">
         <span class="lbl">Sección</span>
-        <span class="val">PREMIUM</span>
+        <span class="val">${(categoryName || 'General').toUpperCase()}</span>
       </div>
       <div class="brand">&#9632; EventHive Ticket</div>
       <div class="title">${event.title}</div>
@@ -236,9 +236,10 @@ export default function TicketPage() {
     const purchaseDate = new Date(ticket.purchaseDate).toLocaleDateString('es-ES', {
       day: '2-digit', month: 'long', year: 'numeric'
     });
+    const pdfCategoryName = ticket.event?.categories?.find(c => c.id === ticket.categoryId)?.name || null;
 
     const html = buildPrintHTML({ ticket, username: user?.username,
-                                  qrSrc, code, purchaseDate });
+                                  qrSrc, code, purchaseDate, categoryName: pdfCategoryName });
     const win  = window.open('', '_blank', 'width=700,height=900');
     win.document.open();
     win.document.write(html);
@@ -267,13 +268,16 @@ export default function TicketPage() {
   });
   const qrUrl = buildQrUrl(buildQrPayload(ticket));
 
+  // Nombre real de la categoría (ej: "General", "VIP") a partir del categoryId del ticket
+  const categoryName = event.categories?.find(c => c.id === ticket.categoryId)?.name || null;
+
   const infoBlocks = [
-    { label: 'ASISTENTE',    value: user?.username,  icon: User,     mono: false },
-    { label: 'Nº DE TICKET', value: code,             icon: Hash,     mono: true  },
-    { label: 'UBICACIÓN',    value: event.location,  icon: MapPin,   mono: false },
-    { label: 'FECHA',        value: event.date,       icon: Calendar, mono: false },
-    { label: 'COMPRA',       value: purchaseDate,     icon: Clock,    mono: false },
-    { label: 'SECCIÓN',      value: 'Premium',        icon: Tag,      mono: false },
+    { label: 'ASISTENTE',    value: user?.username,          icon: User,     mono: false },
+    { label: 'Nº DE TICKET', value: code,                     icon: Hash,     mono: true  },
+    { label: 'UBICACIÓN',    value: event.location,          icon: MapPin,   mono: false },
+    { label: 'FECHA',        value: event.date,               icon: Calendar, mono: false },
+    { label: 'COMPRA',       value: purchaseDate,             icon: Clock,    mono: false },
+    { label: 'SECCIÓN',      value: categoryName || 'General', icon: Tag,    mono: false },
   ];
 
   return (
@@ -312,7 +316,9 @@ export default function TicketPage() {
                             rounded-xl text-center">
               <span className="block text-[9px] font-bold uppercase tracking-widest
                                opacity-70 mb-0.5">Sección</span>
-              <span className="text-base font-black italic">PREMIUM</span>
+              <span className="text-base font-black italic">
+                {(categoryName || 'General').toUpperCase()}
+              </span>
             </div>
           </div>
         </div>

@@ -79,6 +79,24 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── Middleware: métricas de uso (registra en BD propia) ───────────────────────
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    ApiMetric.create({
+      endpoint:     req.path,
+      method:       req.method,
+      userId:       req.headers['x-user-id']
+        ? parseInt(req.headers['x-user-id'], 10)
+        : null,
+      responseTime: Date.now() - start,
+      statusCode:   res.statusCode,
+      cacheHit:     res.getHeader('X-Cache-Status') === 'HIT',
+    }).catch(() => {});   // silencioso — nunca bloquear la respuesta
+  });
+  next();
+});
+
 // ── Cache en memoria (TTL simple, sin dependencias externas) ──────────────────
 const _cache = new Map();
 
@@ -245,13 +263,14 @@ app.get('/agenda/:userId', async (req, res) => {
     const allTickets = await get('tickets', `/user/${userId}`);
 
     const mapped = allTickets.map(t => {
-      const code = ticketCode(t.id, t.purchaseDate);
+      const code         = ticketCode(t.id, t.purchaseDate);
+      const categoryName = t.event?.categories?.find(c => c.id === t.categoryId)?.name || null;
       return {
         ticketId:     t.id,
         code,
         verifyUrl:    verifyUrl(code),
         purchaseDate: t.purchaseDate,
-        section:      'Premium',
+        section:      categoryName,
         event: {
           id:       t.event?.id,
           title:    t.event?.title    || 'Evento',
@@ -289,6 +308,8 @@ app.get('/credential/:ticketId', async (req, res) => {
     const code   = ticketCode(ticket.id, ticket.purchaseDate);
     const url    = verifyUrl(code);
 
+    const categoryName = ticket.event?.categories?.find(c => c.id === ticket.categoryId)?.name || null;
+
     const payload = {
       ticketId:     ticket.id,
       code,
@@ -296,7 +317,7 @@ app.get('/credential/:ticketId', async (req, res) => {
       qrPayload:    url,                   // lo que el QR debe codificar
       purchaseDate: ticket.purchaseDate,
       userId:       ticket.userId,
-      section:      'Premium',
+      section:      categoryName,
       event: {
         id:       ticket.event?.id,
         title:    ticket.event?.title    || 'Evento',
@@ -697,6 +718,188 @@ app.patch('/notifications/user/:userId/read-all', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  ENDPOINTS DE BASE DE DATOS PROPIA
+//  (Device, MobilePreference, ApiMetric) — cumplen el patrón DB-per-service
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /devices
+ * Registra o actualiza un dispositivo móvil del usuario.
+ * Body: { userId, deviceId, platform, appVersion, pushToken }
+ */
+app.post('/devices', async (req, res) => {
+  const { userId, deviceId, platform, appVersion, pushToken } = req.body;
+  if (!userId || !deviceId) {
+    return res.status(400).json({ error: 'userId y deviceId son requeridos.' });
+  }
+  try {
+    const [device, created] = await Device.upsert({
+      userId, deviceId,
+      platform:   platform   || 'android',
+      appVersion: appVersion || null,
+      pushToken:  pushToken  || null,
+      lastSeen:   new Date(),
+      active:     true,
+    });
+    res.status(created ? 201 : 200).json({ ok: true, device });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PATCH /devices/:deviceId/heartbeat
+ * Actualiza el lastSeen del dispositivo (ping de actividad).
+ */
+app.patch('/devices/:deviceId/heartbeat', async (req, res) => {
+  try {
+    const [updated] = await Device.update(
+      { lastSeen: new Date() },
+      { where: { deviceId: req.params.deviceId, active: true } }
+    );
+    if (!updated) return res.status(404).json({ error: 'Dispositivo no encontrado.' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /devices/:deviceId
+ * Desregistra un dispositivo (marca como inactivo).
+ */
+app.delete('/devices/:deviceId', async (req, res) => {
+  try {
+    const [updated] = await Device.update(
+      { active: false },
+      { where: { deviceId: req.params.deviceId } }
+    );
+    if (!updated) return res.status(404).json({ error: 'Dispositivo no encontrado.' });
+    res.json({ ok: true, message: 'Dispositivo desregistrado.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /devices/user/:userId
+ * Dispositivos activos registrados de un usuario.
+ */
+app.get('/devices/user/:userId', async (req, res) => {
+  try {
+    const devices = await Device.findAll({
+      where:      { userId: req.params.userId, active: true },
+      attributes: ['deviceId', 'platform', 'appVersion', 'lastSeen'],
+      order:      [['lastSeen', 'DESC']],
+    });
+    res.json({ devices, total: devices.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /preferences/:userId
+ * Preferencias de la app móvil del usuario (crea defaults si no existen).
+ */
+app.get('/preferences/:userId', async (req, res) => {
+  try {
+    const [prefs] = await MobilePreference.findOrCreate({
+      where:    { userId: req.params.userId },
+      defaults: {},   // usa los defaultValue del modelo
+    });
+    res.json(prefs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PUT /preferences/:userId
+ * Actualiza las preferencias de la app móvil del usuario.
+ * Body: { theme?, language?, notifyPush?, notifyEmail?, notifyReminders?, notifyAnnouncements? }
+ */
+app.put('/preferences/:userId', async (req, res) => {
+  const ALLOWED = ['theme', 'language', 'notifyPush', 'notifyEmail', 'notifyReminders', 'notifyAnnouncements'];
+  const updates = {};
+  ALLOWED.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+
+  try {
+    const [prefs, created] = await MobilePreference.findOrCreate({
+      where:    { userId: req.params.userId },
+      defaults: updates,
+    });
+    if (!created && Object.keys(updates).length > 0) await prefs.update(updates);
+    res.json(prefs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /metrics/summary?days=7
+ * Resumen de métricas de uso de los endpoints móviles (últimos N días).
+ */
+app.get('/metrics/summary', async (req, res) => {
+  const days  = Math.min(30, Math.max(1, parseInt(req.query.days || '7', 10)));
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  try {
+    const [totalRequests, avgRow, errorCount, topEndpoints, cacheHits] = await Promise.all([
+      ApiMetric.count({ where: { createdAt: { [Op.gte]: since } } }),
+      ApiMetric.findOne({
+        where:      { createdAt: { [Op.gte]: since } },
+        attributes: [[sequelize.fn('AVG', sequelize.col('responseTime')), 'avg']],
+        raw:        true,
+      }),
+      ApiMetric.count({
+        where: { createdAt: { [Op.gte]: since }, statusCode: { [Op.gte]: 400 } },
+      }),
+      ApiMetric.findAll({
+        where:      { createdAt: { [Op.gte]: since } },
+        attributes: [
+          'endpoint',
+          [sequelize.fn('COUNT', sequelize.col('id')), 'requests'],
+          [sequelize.fn('AVG',   sequelize.col('responseTime')), 'avgMs'],
+        ],
+        group: ['endpoint'],
+        order: [[sequelize.fn('COUNT', sequelize.col('id')), 'DESC']],
+        limit: 10,
+        raw:   true,
+      }),
+      ApiMetric.count({
+        where: { createdAt: { [Op.gte]: since }, cacheHit: true },
+      }),
+    ]);
+
+    const total  = Number(totalRequests);
+    const errors = Number(errorCount);
+    const cached = Number(cacheHits);
+
+    res.json({
+      period:            `Últimos ${days} días`,
+      totalRequests:     total,
+      avgResponseTimeMs: parseFloat(parseFloat(avgRow?.avg || 0).toFixed(1)),
+      errorCount:        errors,
+      errorRate:         total > 0 ? parseFloat(((errors / total) * 100).toFixed(1)) : 0,
+      cacheHits:         cached,
+      cacheHitRate:      total > 0 ? parseFloat(((cached / total) * 100).toFixed(1)) : 0,
+      topEndpoints: topEndpoints.map(e => ({
+        endpoint: e.endpoint,
+        requests: Number(e.requests),
+        avgMs:    parseFloat(parseFloat(e.avgMs || 0).toFixed(1)),
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  HEALTH & INFO
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -706,18 +909,32 @@ app.get('/health', (req, res) => {
     port:      PORT,
     cacheSize: _cache.size,
     services:  Object.keys(SVC),
+    database:  'mobile_bff_db (Device, MobilePreference, ApiMetric)',
     endpoints: {
       attendee: [
-        'GET /home/:userId         → pantalla de inicio (perfil + tickets + eventos + notifs)',
-        'GET /agenda/:userId       → agenda completa (próximos + pasados)',
-        'GET /credential/:ticketId → credencial QR del ticket',
-        'GET /notifications/:userId→ notificaciones con contador',
-        'GET /event/:eventId       → detalle de evento con reseñas y disponibilidad',
-        'GET /search?q=&category=&location=&page= → búsqueda paginada',
+        'GET /home/:userId                          → pantalla de inicio (perfil + tickets + eventos + notifs)',
+        'GET /agenda/:userId                        → agenda completa (próximos + pasados)',
+        'GET /credential/:ticketId                  → credencial QR del ticket',
+        'GET /notifications/:userId                 → notificaciones con contador',
+        'GET /event/:eventId                        → detalle de evento con reseñas y disponibilidad',
+        'GET /search?q=&category=&location=&page=  → búsqueda paginada',
       ],
       organizer: [
         'GET /organizer/dashboard/:username → panel con todos los eventos + stats',
         'GET /organizer/event/:eventId      → gestión de un evento específico',
+      ],
+      devices: [
+        'POST   /devices                    → registrar / actualizar dispositivo',
+        'PATCH  /devices/:deviceId/heartbeat→ actualizar lastSeen',
+        'DELETE /devices/:deviceId          → desregistrar dispositivo',
+        'GET    /devices/user/:userId       → dispositivos activos del usuario',
+      ],
+      preferences: [
+        'GET /preferences/:userId           → preferencias de la app móvil',
+        'PUT /preferences/:userId           → actualizar preferencias',
+      ],
+      metrics: [
+        'GET /metrics/summary?days=7        → resumen de uso de la API (BD propia)',
       ],
       utils: [
         'PATCH /notifications/:id/read',
@@ -733,9 +950,33 @@ app.use((req, res) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`\n🚀 Mobile BFF corriendo en puerto ${PORT}`);
-  console.log(`   Compresión gzip:  ✅ activa`);
-  console.log(`   Caché en memoria: ✅ activa (TTL 30-60 s)`);
-  console.log(`   Servicios:        ${Object.entries(SVC).map(([k,v]) => `${k}→${v}`).join(' | ')}\n`);
-});
+async function connectWithRetry(retries = 10, delayMs = 3000) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await sequelize.authenticate();
+      await sequelize.sync({ alter: true });
+      console.log('✅ BD mobile_bff_db sincronizada (Device, MobilePreference, ApiMetric)');
+      return true;
+    } catch (err) {
+      console.warn(`⏳ BD no disponible (intento ${attempt}/${retries}): ${err.message}`);
+      if (attempt < retries) await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  console.error('⚠️  No se pudo conectar a la BD tras varios intentos. Continuando sin persistencia.');
+  return false;
+}
+
+async function start() {
+  // Conectar y sincronizar la base de datos propia del BFF (con reintentos)
+  await connectWithRetry();
+
+  app.listen(PORT, () => {
+    console.log(`\n🚀 Mobile BFF corriendo en puerto ${PORT}`);
+    console.log(`   Compresión gzip:  ✅ activa`);
+    console.log(`   Caché en memoria: ✅ activa (TTL 30-60 s)`);
+    console.log(`   Base de datos:    ✅ mobile_bff_db`);
+    console.log(`   Servicios:        ${Object.entries(SVC).map(([k, v]) => `${k}→${v}`).join(' | ')}\n`);
+  });
+}
+
+start();

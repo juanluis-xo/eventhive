@@ -126,15 +126,17 @@ export default function VerifyTicketPage() {
                 </div>
 
                 {/* Sección */}
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Tag className="w-3.5 h-3.5 text-primary-500" />
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      Sección
-                    </span>
+                {data.categoryName && (
+                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Tag className="w-3.5 h-3.5 text-primary-500" />
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        Sección
+                      </span>
+                    </div>
+                    <p className="text-slate-800 font-bold text-sm">{data.categoryName}</p>
                   </div>
-                  <p className="text-slate-800 font-bold text-sm">Premium</p>
-                </div>
+                )}
 
                 {/* Fecha evento */}
                 {event?.date && (

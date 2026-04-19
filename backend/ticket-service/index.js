@@ -60,9 +60,17 @@ app.get('/verify/:code', async (req, res) => {
       event = evRes.data;
     } catch { /* evento no disponible — igual devolvemos el ticket */ }
 
+    // Buscar el nombre de la categoría usando el categoryId del ticket
+    let categoryName = null;
+    if (ticket.categoryId && Array.isArray(event.categories)) {
+      const cat = event.categories.find(c => c.id === ticket.categoryId);
+      categoryName = cat?.name || null;
+    }
+
     res.json({
       valid: true,
       code,
+      categoryName,
       ticket: {
         id:           ticket.id,
         purchaseDate: ticket.purchaseDate,

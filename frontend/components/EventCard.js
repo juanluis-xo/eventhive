@@ -2,8 +2,8 @@ import Link from 'next/link';
 import { Calendar, MapPin } from 'lucide-react';
 
 export default function EventCard({ event }) {
-  // Usar una imagen real de placeholder basada en el id para variedad
-  const imageUrl = `https://picsum.photos/seed/${event.id}/600/340`;
+  // Usar la imagen guardada del evento; si no tiene, usar placeholder por id
+  const imageUrl = event.imageUrl || `https://picsum.photos/seed/${event.id}/600/340`;
 
   return (
     <div className="card group">
