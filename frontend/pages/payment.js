@@ -6,11 +6,18 @@ import { PayPalButtons } from '@paypal/react-paypal-js';
 
 export default function Payment() {
   const router = useRouter();
-  const { eventId, price, title, categoryId, categoryName } = router.query;
+  const { eventId, price, title, categoryId, categoryName, cartItems } = router.query;
   const [method, setMethod] = useState('credit_card');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [user, setUser] = useState(null);
+
+  // Flujo carrito (multi-zona) vs flujo clásico (una categoría)
+  const isCartFlow   = !!cartItems;
+  const parsedCart   = isCartFlow ? (() => { try { return JSON.parse(cartItems); } catch { return []; } })() : null;
+  const totalAmount  = isCartFlow
+    ? (parsedCart || []).reduce((s, i) => s + Number(i.zone.price) * i.quantity, 0)
+    : parseFloat(price) || 0;
 
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
@@ -24,36 +31,63 @@ export default function Payment() {
   const handlePayment = async (details = null) => {
     setLoading(true);
     try {
-      // 1. Process Payment in Payment Service
+      // 1. Procesar pago
       const paymentResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/payments/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
           eventId: parseInt(eventId),
-          amount: parseFloat(price),
-          method: method,
-          paypalDetails: details
+          amount: totalAmount,
+          method,
+          paypalDetails: details,
         }),
       });
-
       if (!paymentResponse.ok) throw new Error('Error al procesar el pago');
-      
-      // 2. Create Ticket in Ticket Service
-      const ticketResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          eventId: parseInt(eventId),
-          categoryId: categoryId ? parseInt(categoryId) : null
-        }),
-      });
 
-      if (!ticketResponse.ok) throw new Error('Error al generar el ticket');
-
-      setSuccess(true);
-      setTimeout(() => router.push('/dashboard'), 3000);
+      // 2. Crear ticket(s)
+      if (isCartFlow && parsedCart?.length > 0) {
+        // Flujo multi-zona: batch endpoint
+        const batchResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets/batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId:  user.id,
+            eventId: parseInt(eventId),
+            items: parsedCart.map(i => ({
+              categoryId: i.zone.id,
+              zoneLabel:  i.zone.name,
+              quantity:   i.quantity,
+            })),
+          }),
+        });
+        if (!batchResponse.ok) {
+          const errData = await batchResponse.json().catch(() => ({}));
+          throw new Error(errData.error || 'Error al generar los tickets');
+        }
+        const { tickets: createdTickets } = await batchResponse.json();
+        setSuccess(true);
+        // Redirigir a vista multi-ticket con todos los IDs
+        const ids = createdTickets.map(t => t.id).join(',');
+        setTimeout(() => router.push(`/ticket?ids=${ids}`), 2800);
+      } else {
+        // Flujo clásico: ticket individual
+        const ticketResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId:     user.id,
+            eventId:    parseInt(eventId),
+            categoryId: categoryId ? parseInt(categoryId) : null,
+          }),
+        });
+        if (!ticketResponse.ok) throw new Error('Error al generar el ticket');
+        const createdTicket = await ticketResponse.json();
+        setSuccess(true);
+        setTimeout(() => router.push(`/ticket?id=${createdTicket.id}`), 2800);
+        return; // evita el setSuccess duplicado abajo
+      }
+      return;
     } catch (err) {
       alert(err.message);
     } finally {
@@ -81,16 +115,39 @@ export default function Payment() {
                   <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Evento</p>
                   <p className="font-bold text-lg leading-tight">{title}</p>
                 </div>
-                {categoryName && (
+
+                {/* Flujo carrito: lista de zonas */}
+                {isCartFlow && parsedCart?.length > 0 ? (
+                  <div>
+                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2">Entradas</p>
+                    <div className="space-y-2">
+                      {parsedCart.map((item, i) => (
+                        <div key={i} className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full shrink-0"
+                              style={{ background: item.zone.color || '#7c3aed' }} />
+                            <span className="text-sm font-semibold text-slate-300">
+                              {item.zone.name} × {item.quantity}
+                            </span>
+                          </div>
+                          <span className="text-sm font-bold text-white">
+                            ${(Number(item.zone.price) * item.quantity).toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : categoryName ? (
                   <div>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Categoría</p>
                     <p className="font-bold text-primary-400">{categoryName}</p>
                   </div>
-                )}
+                ) : null}
+
                 <div>
                   <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Total a pagar</p>
                   <p className="text-3xl font-black text-primary-400">
-                    {Number(price).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                    {totalAmount.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
                   </p>
                 </div>
                 <div className="pt-6 border-t border-white/10 space-y-4">
@@ -181,7 +238,7 @@ export default function Payment() {
                           purchase_units: [
                             {
                               amount: {
-                                value: price ? price.toString() : "0",
+                                value: totalAmount.toFixed(2),
                               },
                             },
                           ],

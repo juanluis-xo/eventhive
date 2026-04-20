@@ -7,8 +7,9 @@ import {
   Star, MessageSquare, Wallet, Edit2, Trash2, ChevronDown, ChevronUp,
   Building, CreditCard, Save, Image as ImageIcon, Users,
   TrendingUp, RefreshCw, Activity, DollarSign,
-  Bell, Megaphone, Send, CheckCheck
+  Bell, Megaphone, Send, CheckCheck, Map
 } from 'lucide-react';
+import SeatMapEditor from '@/components/SeatMapEditor';
 
 const PAISES_CIUDADES = {
   'Colombia':     ['Bogotá','Medellín','Cali','Barranquilla','Cartagena','Montería','Bucaramanga','Pereira','Manizales','Santa Marta'],
@@ -203,6 +204,9 @@ export default function Dashboard() {
   const [showEditModal, setShowEditModal]   = useState(false);
   const [editForm, setEditForm]             = useState(null);
   const [saving, setSaving]                 = useState(false);
+
+  // Editor de mapa de zonas
+  const [mapEditorEvent, setMapEditorEvent] = useState(null);  // evento cuyo mapa se está editando
 
   // Cartera
   const [ticketStats, setTicketStats]       = useState({});
@@ -468,6 +472,41 @@ export default function Dashboard() {
       alert(err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── GUARDAR MAPA DE ZONAS ────────────────────────────────────────────────
+  const handleSaveMap = async ({ zones, stage } = {}) => {
+    // zones = array de categorías con campos name/price/capacity/color/shape/coords
+    try {
+      const token = localStorage.getItem('token');
+      const event = mapEditorEvent;
+
+      // Actualizar cada categoría con los nuevos campos del mapa
+      await Promise.all(zones.map(async zone => {
+        const isNew = String(zone.id).startsWith('new-');
+        if (isNew) {
+          // Crear categoría nueva
+          await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events/${event.id}/categories`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ name: zone.name, price: zone.price, capacity: zone.capacity, sold: 0, color: zone.color, shape: zone.shape, coords: zone.coords }),
+          });
+        } else {
+          // Actualizar categoría existente
+          await fetch(`${process.env.NEXT_PUBLIC_API_URL}/events/categories/${zone.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ name: zone.name, price: zone.price, capacity: zone.capacity, color: zone.color, shape: zone.shape, coords: zone.coords }),
+          });
+        }
+      }));
+
+      setMapEditorEvent(null);
+      await fetchData(user);
+      alert('✅ Mapa de zonas guardado correctamente');
+    } catch (err) {
+      alert('Error al guardar el mapa: ' + err.message);
     }
   };
 
@@ -976,6 +1015,10 @@ export default function Dashboard() {
                             className="flex-1 md:flex-none flex items-center justify-center gap-1 text-center px-4 py-2.5 bg-blue-50 text-blue-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-100 transition-all">
                             <Edit2 className="w-3.5 h-3.5" /> Editar
                           </button>
+                          <button onClick={() => setMapEditorEvent(event)}
+                            className="flex-1 md:flex-none flex items-center justify-center gap-1 text-center px-4 py-2.5 bg-violet-50 text-violet-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-violet-100 transition-all">
+                            <Map className="w-3.5 h-3.5" /> Mapa
+                          </button>
                           <button onClick={() => { setAnnounceEventId(event.id); setShowAnnounceModal(true); }}
                             className="flex-1 md:flex-none flex items-center justify-center gap-1 text-center px-4 py-2.5 bg-amber-50 text-amber-600 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-100 transition-all">
                             <Megaphone className="w-3.5 h-3.5" /> Anunciar
@@ -1234,6 +1277,15 @@ export default function Dashboard() {
 
         </div>
       </div>
+
+      {/* ── Editor de mapa de zonas ── */}
+      {mapEditorEvent && (
+        <SeatMapEditor
+          categories={mapEditorEvent.categories || []}
+          onSave={handleSaveMap}
+          onClose={() => setMapEditorEvent(null)}
+        />
+      )}
 
       <style jsx global>{`
         .form-label { display: block; font-size: 10px; font-weight: 900; color: #94a3b8; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.1em; }

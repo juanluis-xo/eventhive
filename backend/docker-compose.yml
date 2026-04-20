@@ -85,10 +85,11 @@ services:
       DB_PASS: root
       DB_NAME: user_db
       JWT_SECRET: eventhive_secret_key_2026
-      # Credenciales del administrador — CAMBIAR antes de desplegar en producción
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@eventhive.com}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme123}
+      # Credenciales del administrador — se crea automáticamente al arrancar
+      # el user-service si aún no existe (seed idempotente). CAMBIAR en producción.
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-ADMIN}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admineventhive084@gmail.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-ADMIN123}
     depends_on:
       - user-db
     ports:

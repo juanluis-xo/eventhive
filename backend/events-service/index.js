@@ -49,7 +49,11 @@ const EventCategory = sequelize.define('EventCategory', {
   name:     { type: DataTypes.STRING,        allowNull: false },
   price:    { type: DataTypes.DECIMAL(10,2), allowNull: false },
   capacity: { type: DataTypes.INTEGER,       allowNull: false },
-  sold:     { type: DataTypes.INTEGER,       defaultValue: 0 }
+  sold:     { type: DataTypes.INTEGER,       defaultValue: 0 },
+  // ── Mapa de zonas ──────────────────────────────────────────
+  color:    { type: DataTypes.STRING,        allowNull: true },  // ej. "#ec4899"
+  shape:    { type: DataTypes.ENUM('rect','polygon'), allowNull: true },
+  coords:   { type: DataTypes.JSON,          allowNull: true },  // {x,y,w,h} o {points:"x1,y1 x2,y2..."}
 });
 
 const EventWallet = sequelize.define('EventWallet', {
@@ -132,7 +136,7 @@ app.post('/', verifyAdmin, async (req, res) => {
     const event = await Event.create(eventData);
     if (categories && categories.length > 0) {
       await Promise.all(categories.map(cat =>
-        EventCategory.create({ name: cat.name, price: parseFloat(cat.price), capacity: parseInt(cat.capacity), sold: 0, eventId: event.id })
+        EventCategory.create({ name: cat.name, price: parseFloat(cat.price), capacity: parseInt(cat.capacity), sold: 0, eventId: event.id, color: cat.color || null, shape: cat.shape || null, coords: cat.coords || null })
       ));
     }
     const cats = await EventCategory.findAll({ where: { eventId: event.id } });

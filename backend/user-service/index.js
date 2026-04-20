@@ -80,6 +80,47 @@ app.get('/profile/:id', async (req, res) => {
   }
 });
 
-sequelize.sync().then(() => {
+// ─── Auto-seed del administrador ───────────────────────────────────────────
+// Crea un usuario admin automáticamente al arrancar el servicio si aún no existe.
+// Lee las credenciales desde las variables de entorno definidas en docker-compose.yml:
+//   ADMIN_USERNAME, ADMIN_EMAIL, ADMIN_PASSWORD
+// Es idempotente: si ya hay un admin en la base de datos, no hace nada.
+async function seedAdminIfNeeded() {
+  const adminUsername = process.env.ADMIN_USERNAME;
+  const adminEmail    = process.env.ADMIN_EMAIL;
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  if (!adminUsername || !adminEmail || !adminPassword) {
+    console.log('[UserService] ℹ️  ADMIN_USERNAME/ADMIN_EMAIL/ADMIN_PASSWORD no definidos — se omite el seed del admin.');
+    return;
+  }
+
+  try {
+    // Asegurar que el ENUM de roles incluye 'admin' (por si la tabla ya existía con un ENUM viejo)
+    await sequelize.query(
+      "ALTER TABLE Users MODIFY COLUMN role ENUM('organizer','attendee','admin') DEFAULT 'attendee'"
+    ).catch(() => { /* si la tabla no existe todavía o ya está bien, ignorar */ });
+
+    const existing = await User.findOne({ where: { role: 'admin' } });
+    if (existing) {
+      console.log(`[UserService] ✅ Admin ya existe: ${existing.username} (${existing.email}) — no se crea otro.`);
+      return;
+    }
+
+    const hashedPassword = await bcrypt.hash(adminPassword, 10);
+    await User.create({
+      username: adminUsername,
+      email:    adminEmail,
+      password: hashedPassword,
+      role:     'admin'
+    });
+    console.log(`[UserService] ✅ Admin creado automáticamente: ${adminUsername} (${adminEmail})`);
+  } catch (err) {
+    console.error('[UserService] ❌ Error al crear el admin automáticamente:', err.message);
+  }
+}
+
+sequelize.sync().then(async () => {
+  await seedAdminIfNeeded();
   app.listen(PORT, () => console.log(`User Service running on port ${PORT}`));
 }).catch(err => console.error('Database connection failed:', err));

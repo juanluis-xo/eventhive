@@ -27,6 +27,7 @@ const Ticket = sequelize.define('Ticket', {
   userId:       { type: DataTypes.INTEGER, allowNull: false },
   eventId:      { type: DataTypes.INTEGER, allowNull: false },
   categoryId:   { type: DataTypes.INTEGER, allowNull: true },
+  zoneLabel:    { type: DataTypes.STRING,  allowNull: true },  // ej. "VIP", "General Norte"
   purchaseDate: { type: DataTypes.DATE,    defaultValue: DataTypes.NOW }
 });
 
@@ -126,9 +127,9 @@ app.get('/details/:id', async (req, res) => {
     if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' });
     try {
       const eventRes = await getEvent(ticket.eventId);
-      res.json({ id: ticket.id, purchaseDate: ticket.purchaseDate, userId: ticket.userId, categoryId: ticket.categoryId, event: eventRes.data });
+      res.json({ id: ticket.id, purchaseDate: ticket.purchaseDate, userId: ticket.userId, categoryId: ticket.categoryId, zoneLabel: ticket.zoneLabel, event: eventRes.data });
     } catch {
-      res.json({ id: ticket.id, purchaseDate: ticket.purchaseDate, userId: ticket.userId, categoryId: ticket.categoryId, event: { title: "Evento no disponible" } });
+      res.json({ id: ticket.id, purchaseDate: ticket.purchaseDate, userId: ticket.userId, categoryId: ticket.categoryId, zoneLabel: ticket.zoneLabel, event: { title: "Evento no disponible" } });
     }
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -176,6 +177,49 @@ app.post('/', async (req, res) => {
       ticketId: ticket.id
     }).catch(e => console.log('[TicketService] Notificación no enviada (no crítico):', e.message));
 
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// 5. Compra múltiple (mapa de zonas)
+// Body: { userId, eventId, items: [{ categoryId, zoneLabel, quantity }] }
+app.post('/batch', async (req, res) => {
+  const { userId, eventId, items } = req.body;
+  if (!userId || !eventId || !Array.isArray(items) || items.length === 0)
+    return res.status(400).json({ error: 'userId, eventId e items[] son requeridos.' });
+
+  try {
+    const created = [];
+    for (const item of items) {
+      const qty = Math.max(1, parseInt(item.quantity) || 1);
+      for (let i = 0; i < qty; i++) {
+        const ticket = await Ticket.create({
+          userId,
+          eventId:    parseInt(eventId),   // ← usa el eventId del body raíz
+          categoryId: item.categoryId || null,
+          zoneLabel:  item.zoneLabel  || null,
+        });
+        created.push(ticket);
+      }
+      // Incrementar sold tantas veces como quantity
+      if (item.categoryId) {
+        const incUrl = `${EVENTS_SERVICE_URL}/categories/${item.categoryId}/increment`;
+        const incReqs = Array.from({ length: qty }, () =>
+          axios.patch(incUrl).catch(() =>
+            axios.patch(`http://localhost:5002/categories/${item.categoryId}/increment`)
+          ).catch(() => {})
+        );
+        await Promise.all(incReqs);
+      }
+    }
+
+    // Notificación única (no bloqueante)
+    axios.post(`${NOTIFICATION_SERVICE_URL}/notify`, {
+      type: 'ticket.purchased', userId, ticketIds: created.map(t => t.id)
+    }).catch(() => {});
+
+    res.status(201).json({ tickets: created, total: created.length });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

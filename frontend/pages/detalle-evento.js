@@ -2,6 +2,8 @@ import { useRouter } from 'next/router';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Calendar, MapPin, Ticket, Shield, Share2, Heart, ArrowLeft, Users, Loader2, CheckCircle, Star, MessageSquare, BarChart3 } from 'lucide-react';
+import SeatMapViewer from '@/components/SeatMapViewer';
+import TicketCart from '@/components/TicketCart';
 
 export default function DetalleEvento() {
   const router = useRouter();
@@ -13,6 +15,8 @@ export default function DetalleEvento() {
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
+  // Carrito para compra por mapa de zonas
+  const [cartItems, setCartItems] = useState([]);   // [{ zone, quantity }]
 
   // Estados para reseñas
   const [reviewsData, setReviewsData] = useState({ count: 0, average: 0, reviews: [] });
@@ -178,6 +182,9 @@ export default function DetalleEvento() {
     );
   }
 
+  // El evento tiene mapa si al menos una categoría tiene coords definidas
+  const hasSeatMap = (event.categories || []).some(c => c.shape && c.coords);
+
   return (
     <div className="pb-24">
       {/* Header / Hero */}
@@ -223,6 +230,30 @@ export default function DetalleEvento() {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12">
+
+        {/* Mapa interactivo — full width cuando el evento tiene mapa de zonas */}
+        {hasSeatMap && (
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-md mb-10">
+            <h3 className="text-lg font-extrabold text-slate-800 mb-5 flex items-center gap-2">
+              🗺️ <span>Selecciona tu zona</span>
+            </h3>
+            <SeatMapViewer
+              zones={event.categories}
+              onSelect={({ zone, quantity }) => {
+                setCartItems(items => {
+                  const idx = items.findIndex(i => i.zone.id === zone.id);
+                  if (idx >= 0) {
+                    const updated = [...items];
+                    updated[idx] = { zone, quantity: updated[idx].quantity + quantity };
+                    return updated;
+                  }
+                  return [...items, { zone, quantity }];
+                });
+              }}
+            />
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-12">
@@ -399,101 +430,120 @@ export default function DetalleEvento() {
 
           {/* Sidebar / Ticket */}
           <div className="lg:col-span-1">
-            <div className="sticky top-28 bg-white border border-slate-200 rounded-3xl p-8 shadow-xl shadow-slate-200/50 overflow-hidden">
-               <div className="absolute top-0 right-0 w-24 h-24 bg-primary-500/5 -mr-8 -mt-8 rounded-full blur-2xl"></div>
-               <div className="mb-6 relative">
-                 {event.categories && event.categories.length > 0 ? (
-                   <div>
-                     <span className="text-slate-500 text-sm font-medium block mb-3">Selecciona tu categoría</span>
-                     <div className="space-y-2 mb-4">
-                       {event.categories.map(cat => {
-                         const remaining = cat.capacity - cat.sold;
-                         const soldOut = remaining <= 0;
-                         const isSelected = selectedCategory?.id === cat.id;
-                         return (
-                           <button key={cat.id} type="button" disabled={soldOut}
-                             onClick={() => setSelectedCategory(isSelected ? null : cat)}
-                             className={`w-full flex items-center justify-between p-3 rounded-2xl border-2 transition-all text-left ${
-                               soldOut ? 'opacity-50 cursor-not-allowed border-slate-100 bg-slate-50' :
-                               isSelected ? 'border-primary-600 bg-primary-50' : 'border-slate-100 hover:border-primary-200 hover:bg-slate-50'
-                             }`}>
-                             <div>
-                               <span className="font-bold text-slate-900 text-sm">{cat.name}</span>
-                               {soldOut ? (
-                                 <span className="ml-2 text-[10px] font-black text-red-500 uppercase bg-red-50 px-1.5 py-0.5 rounded">Agotado</span>
-                               ) : (
-                                 <span className="ml-2 text-[10px] text-slate-400 font-bold">{remaining} disponibles</span>
-                               )}
-                             </div>
-                             <span className="font-black text-primary-600">
-                               {Number(cat.price).toLocaleString('es-ES',{style:'currency',currency:'EUR'})}
-                             </span>
-                           </button>
-                         );
-                       })}
-                     </div>
-                     {selectedCategory && (
-                       <div className="text-2xl font-extrabold text-slate-900 tracking-tight">
-                         {Number(selectedCategory.price).toLocaleString('es-ES',{style:'currency',currency:'EUR'})}
-                       </div>
-                     )}
-                   </div>
-                 ) : (
-                   <div>
-                     <span className="text-slate-500 text-sm font-medium">Precio por ticket</span>
-                     <div className="text-4xl font-extrabold text-slate-900 tracking-tight">
-                       {Number(event.price).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
-                     </div>
-                   </div>
-                 )}
-               </div>
+            {hasSeatMap ? (
+              /* ── CARRITO (el mapa está arriba, full-width) ── */
+              <div className="space-y-4">
+                <TicketCart
+                  items={cartItems}
+                  event={event}
+                  onRemove={i => setCartItems(items => items.filter((_, idx) => idx !== i))}
+                  onCheckout={() => {
+                    const savedUser = localStorage.getItem('user');
+                    if (!savedUser) { router.push('/login'); return; }
+                    // Pasar items al payment page vía query (serializado)
+                    router.push({
+                      pathname: '/payment',
+                      query: {
+                        eventId:    event.id,
+                        title:      event.title,
+                        cartItems:  JSON.stringify(cartItems),
+                      }
+                    });
+                  }}
+                />
 
-               {purchased ? (
-                 <div className="w-full bg-green-50 text-green-700 p-4 rounded-2xl flex flex-col items-center gap-2 border border-green-200 animate-in fade-in zoom-in duration-300">
+                {/* Garantías */}
+                <div className="bg-white border border-slate-100 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Shield className="w-4 h-4 text-green-500 shrink-0" /> Compra protegida y segura
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Calendar className="w-4 h-4 text-primary-600 shrink-0" /> Reembolso hasta 7 días antes
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* ── SELECTOR CLÁSICO (sin mapa) ── */
+              <div className="sticky top-28 bg-white border border-slate-200 rounded-3xl p-8 shadow-xl shadow-slate-200/50 overflow-hidden">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-primary-500/5 -mr-8 -mt-8 rounded-full blur-2xl" />
+                <div className="mb-6 relative">
+                  {event.categories && event.categories.length > 0 ? (
+                    <div>
+                      <span className="text-slate-500 text-sm font-medium block mb-3">Selecciona tu categoría</span>
+                      <div className="space-y-2 mb-4">
+                        {event.categories.map(cat => {
+                          const remaining = cat.capacity - cat.sold;
+                          const soldOut   = remaining <= 0;
+                          const isSelected = selectedCategory?.id === cat.id;
+                          return (
+                            <button key={cat.id} type="button" disabled={soldOut}
+                              onClick={() => setSelectedCategory(isSelected ? null : cat)}
+                              className={`w-full flex items-center justify-between p-3 rounded-2xl border-2 transition-all text-left ${
+                                soldOut ? 'opacity-50 cursor-not-allowed border-slate-100 bg-slate-50' :
+                                isSelected ? 'border-primary-600 bg-primary-50' : 'border-slate-100 hover:border-primary-200 hover:bg-slate-50'
+                              }`}>
+                              <div>
+                                <span className="font-bold text-slate-900 text-sm">{cat.name}</span>
+                                {soldOut ? (
+                                  <span className="ml-2 text-[10px] font-black text-red-500 uppercase bg-red-50 px-1.5 py-0.5 rounded">Agotado</span>
+                                ) : (
+                                  <span className="ml-2 text-[10px] text-slate-400 font-bold">{remaining} disponibles</span>
+                                )}
+                              </div>
+                              <span className="font-black text-primary-600">
+                                {Number(cat.price).toLocaleString('es-ES',{style:'currency',currency:'EUR'})}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {selectedCategory && (
+                        <div className="text-2xl font-extrabold text-slate-900 tracking-tight">
+                          {Number(selectedCategory.price).toLocaleString('es-ES',{style:'currency',currency:'EUR'})}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <span className="text-slate-500 text-sm font-medium">Precio por ticket</span>
+                      <div className="text-4xl font-extrabold text-slate-900 tracking-tight">
+                        {Number(event.price).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {purchased ? (
+                  <div className="w-full bg-green-50 text-green-700 p-4 rounded-2xl flex flex-col items-center gap-2 border border-green-200">
                     <CheckCircle className="w-10 h-10" />
                     <span className="font-bold">¡Entrada Comprada!</span>
                     <span className="text-xs">Redirigiendo a tus tickets...</span>
-                 </div>
-               ) : (
-                 <button 
-                   onClick={handleBuyTicket}
-                   disabled={buying}
-                   className="w-full btn-primary py-4 text-lg flex items-center justify-center gap-3 mb-4 font-bold shadow-lg shadow-primary-600/30 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-70"
-                 >
-                   {buying ? (
-                     <>
-                       <Loader2 className="w-6 h-6 animate-spin" />
-                       Procesando...
-                     </>
-                   ) : (
-                     <>
-                       <Ticket className="w-6 h-6" />
-                       Comprar Ticket Ahora
-                     </>
-                   )}
-                 </button>
-               )}
+                  </div>
+                ) : (
+                  <button onClick={handleBuyTicket} disabled={buying}
+                    className="w-full btn-primary py-4 text-lg flex items-center justify-center gap-3 mb-4 font-bold shadow-lg shadow-primary-600/30 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-70">
+                    {buying ? <><Loader2 className="w-6 h-6 animate-spin" />Procesando...</> : <><Ticket className="w-6 h-6" />Comprar Ticket Ahora</>}
+                  </button>
+                )}
 
-               <div className="space-y-4 pt-6 border-t border-slate-100">
+                <div className="space-y-4 pt-6 border-t border-slate-100">
                   <div className="flex items-center gap-3 text-sm text-slate-600">
-                    <Shield className="w-5 h-5 text-green-500 shrink-0" />
-                    <span>Compra protegida y 100% segura</span>
+                    <Shield className="w-5 h-5 text-green-500 shrink-0" /><span>Compra protegida y 100% segura</span>
                   </div>
                   <div className="flex items-center gap-3 text-sm text-slate-600">
-                    <Calendar className="w-5 h-5 text-primary-600 shrink-0" />
-                    <span>Reembolso disponible hasta 7 días antes</span>
+                    <Calendar className="w-5 h-5 text-primary-600 shrink-0" /><span>Reembolso disponible hasta 7 días antes</span>
                   </div>
-               </div>
-
-               <div className="flex gap-4 mt-8">
-                 <button className="flex-1 btn-secondary py-3 flex items-center justify-center gap-2 text-sm font-bold">
-                   <Heart className="w-4 h-4" /> Guardar
-                 </button>
-                 <button className="flex-1 btn-secondary py-3 flex items-center justify-center gap-2 text-sm font-bold">
-                   <Share2 className="w-4 h-4" /> Compartir
-                 </button>
-               </div>
-            </div>
+                </div>
+                <div className="flex gap-4 mt-8">
+                  <button className="flex-1 btn-secondary py-3 flex items-center justify-center gap-2 text-sm font-bold">
+                    <Heart className="w-4 h-4" /> Guardar
+                  </button>
+                  <button className="flex-1 btn-secondary py-3 flex items-center justify-center gap-2 text-sm font-bold">
+                    <Share2 className="w-4 h-4" /> Compartir
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
