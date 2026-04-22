@@ -186,14 +186,17 @@ services:
       EVENTS_SERVICE_URL: http://events-service:5002
       TICKETS_SERVICE_URL: http://ticket-service:5003
       USER_SERVICE_URL:    http://user-service:5001
-      # ─── Correos con Resend (recomendado) ─────────────────────────────────
-      RESEND_API_KEY: "re_cSCE2U5u_Du5JxYfGeaJga3dBBdWqTHwh"
-      FROM_EMAIL:     "onboarding@resend.dev"
-      # FROM_EMAIL:   "noreply@tudominio.com"   # cuando verifiques dominio
-      # ─── Fallback SMTP (opcional, si no usas Resend) ──────────────────────
-      EMAIL_USER: ${EMAIL_USER:-}
-      EMAIL_PASS: ${EMAIL_PASS:-}
-      EMAIL_HOST: ${EMAIL_HOST:-smtp.gmail.com}
+      # ─── Resend (desactivado — solo funciona con dominio verificado) ─────────
+      # RESEND_API_KEY: ""
+      # FROM_EMAIL:     ""
+      # ─── SMTP con Gmail (activo) ──────────────────────────────────────────
+      # Pon tu correo Gmail y la contraseña de aplicación de 16 caracteres
+      # (sin espacios). Genera la app-password en:
+      # https://myaccount.google.com/apppasswords
+      EMAIL_USER: "admineventhive084@gmail.com"
+      EMAIL_PASS: "hpnpqzgnzbvqfraz"
+      EMAIL_HOST: "smtp.gmail.com"
+      EMAIL_PORT: "587"
       # ─── Push con Firebase (opcional) ─────────────────────────────────────
       FIREBASE_SERVER_KEY: ${FIREBASE_SERVER_KEY:-}
     depends_on:

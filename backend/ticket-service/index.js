@@ -28,7 +28,8 @@ const Ticket = sequelize.define('Ticket', {
   eventId:      { type: DataTypes.INTEGER, allowNull: false },
   categoryId:   { type: DataTypes.INTEGER, allowNull: true },
   zoneLabel:    { type: DataTypes.STRING,  allowNull: true },  // ej. "VIP", "General Norte"
-  purchaseDate: { type: DataTypes.DATE,    defaultValue: DataTypes.NOW }
+  purchaseDate: { type: DataTypes.DATE,    defaultValue: DataTypes.NOW },
+  usedAt:       { type: DataTypes.DATE,    allowNull: true, defaultValue: null } // null = no usado aún
 });
 
 // Helper de fallback Docker → localhost
@@ -41,9 +42,10 @@ const getEvent = async (eventId) => {
 };
 
 // 0b. Verificar ticket por código (EH-YYYY-X####) — ruta pública para QR
+// Primera vez: marca el ticket como usado (usedAt = NOW) y devuelve valid: true
+// Siguientes veces: devuelve alreadyUsed: true con la fecha del primer uso
 app.get('/verify/:code', async (req, res) => {
   const code = req.params.code.toUpperCase();
-  // Parsear código: EH-YYYY-X#### → extraer ID numérico
   const match = code.match(/^EH-\d{4}-X(\d+)$/);
   if (!match) {
     return res.status(400).json({ valid: false, error: 'Código de ticket inválido.' });
@@ -54,6 +56,7 @@ app.get('/verify/:code', async (req, res) => {
     if (!ticket) {
       return res.status(404).json({ valid: false, error: 'Ticket no encontrado.' });
     }
+
     // Obtener datos del evento
     let event = { title: 'Evento no disponible' };
     try {
@@ -61,15 +64,14 @@ app.get('/verify/:code', async (req, res) => {
       event = evRes.data;
     } catch { /* evento no disponible — igual devolvemos el ticket */ }
 
-    // Buscar el nombre de la categoría usando el categoryId del ticket
+    // Buscar el nombre de la categoría
     let categoryName = null;
     if (ticket.categoryId && Array.isArray(event.categories)) {
       const cat = event.categories.find(c => c.id === ticket.categoryId);
       categoryName = cat?.name || null;
     }
 
-    res.json({
-      valid: true,
+    const basePayload = {
       code,
       categoryName,
       ticket: {
@@ -84,7 +86,29 @@ app.get('/verify/:code', async (req, res) => {
         date:     event.date     || null,
         location: event.location || null
       }
+    };
+
+    // ── ¿Ya fue usado? ────────────────────────────────────────────────────────
+    if (ticket.usedAt) {
+      return res.json({
+        ...basePayload,
+        valid:       false,
+        alreadyUsed: true,
+        usedAt:      ticket.usedAt
+      });
+    }
+
+    // ── Primera vez: marcar como usado ───────────────────────────────────────
+    await ticket.update({ usedAt: new Date() });
+    console.log(`[TicketService] ✅ Ticket #${ticketId} marcado como USADO.`);
+
+    res.json({
+      ...basePayload,
+      valid:       true,
+      alreadyUsed: false,
+      usedAt:      null
     });
+
   } catch (error) {
     res.status(500).json({ valid: false, error: error.message });
   }

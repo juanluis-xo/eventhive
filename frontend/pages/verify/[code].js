@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import {
   CheckCircle2, XCircle, Calendar, MapPin,
-  Hash, Loader2, ShieldCheck, ShieldX, Tag
+  Hash, Loader2, ShieldCheck, ShieldX, Tag, AlertTriangle, Clock
 } from 'lucide-react';
 
 /* ─────────────────────────────────────────────────────────────────── */
@@ -12,7 +12,7 @@ export default function VerifyTicketPage() {
   const router = useRouter();
   const { code } = router.query;
 
-  const [status, setStatus]   = useState('loading'); // 'loading' | 'valid' | 'invalid' | 'error'
+  const [status, setStatus]   = useState('loading'); // 'loading' | 'valid' | 'used' | 'invalid' | 'error'
   const [data,   setData]     = useState(null);
   const [errMsg, setErrMsg]   = useState('');
 
@@ -32,6 +32,10 @@ export default function VerifyTicketPage() {
       if (res.ok && json.valid) {
         setData(json);
         setStatus('valid');
+      } else if (res.ok && json.alreadyUsed) {
+        // Ticket existe pero ya fue escaneado antes
+        setData(json);
+        setStatus('used');
       } else {
         setErrMsg(json.error || 'Ticket no encontrado o inválido.');
         setStatus('invalid');
@@ -189,6 +193,131 @@ export default function VerifyTicketPage() {
             })}
           </p>
 
+        </div>
+      </div>
+    );
+  }
+
+  /* ── YA USADO ── */
+  if (status === 'used' && data) {
+    const { event, ticket } = data;
+    const usedDate = new Date(data.usedAt).toLocaleString('es-ES', {
+      weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+    const purchaseDate = new Date(ticket.purchaseDate).toLocaleDateString('es-ES', {
+      day: '2-digit', month: 'long', year: 'numeric'
+    });
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50
+                      flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-orange-100">
+
+            {/* Header naranja */}
+            <div className="bg-gradient-to-r from-orange-500 to-amber-500
+                            px-8 py-8 text-center relative overflow-hidden">
+              <div className="absolute -top-8 -left-8 w-32 h-32 bg-white/10 rounded-full" />
+              <div className="absolute -bottom-10 -right-6 w-40 h-40 bg-white/10 rounded-full" />
+              <div className="relative z-10">
+                <div className="inline-flex items-center justify-center w-20 h-20
+                                bg-white/25 rounded-full mb-4 ring-4 ring-white/40">
+                  <AlertTriangle className="w-11 h-11 text-white" />
+                </div>
+                <h1 className="text-2xl font-extrabold text-white mb-1">Ticket Ya Usado</h1>
+                <p className="text-orange-100 text-sm font-medium">
+                  Este ticket ya fue validado anteriormente
+                </p>
+              </div>
+            </div>
+
+            {/* Badge USADO */}
+            <div className="flex justify-center -mt-4 relative z-10">
+              <span className="inline-flex items-center gap-2 bg-orange-500 text-white
+                               font-bold text-xs uppercase tracking-widest px-5 py-2
+                               rounded-full shadow-lg shadow-orange-500/30">
+                <ShieldX className="w-3.5 h-3.5" />
+                Acceso Denegado — Ya Utilizado
+              </span>
+            </div>
+
+            <div className="px-7 py-7 space-y-4">
+              {/* Nombre del evento */}
+              <div className="bg-slate-900 rounded-2xl p-5 text-center">
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Evento</p>
+                <h2 className="text-white font-extrabold text-lg leading-tight">
+                  {event?.title ?? '—'}
+                </h2>
+              </div>
+
+              {/* Cuándo fue usado */}
+              <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Clock className="w-4 h-4 text-orange-500" />
+                  <span className="text-orange-700 text-xs font-bold uppercase tracking-wider">
+                    Primera vez escaneado
+                  </span>
+                </div>
+                <p className="text-orange-800 font-bold text-sm capitalize">{usedDate}</p>
+              </div>
+
+              {/* Grid info */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Hash className="w-3.5 h-3.5 text-primary-500" />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Código</span>
+                  </div>
+                  <p className="font-mono text-slate-800 font-bold text-sm">{data.code}</p>
+                </div>
+                {data.categoryName && (
+                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Tag className="w-3.5 h-3.5 text-primary-500" />
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sección</span>
+                    </div>
+                    <p className="text-slate-800 font-bold text-sm">{data.categoryName}</p>
+                  </div>
+                )}
+                {event?.date && (
+                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Calendar className="w-3.5 h-3.5 text-primary-500" />
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fecha evento</span>
+                    </div>
+                    <p className="text-slate-800 font-bold text-sm">{event.date}</p>
+                  </div>
+                )}
+                {event?.location && (
+                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <MapPin className="w-3.5 h-3.5 text-primary-500" />
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lugar</span>
+                    </div>
+                    <p className="text-slate-800 font-bold text-sm">{event.location}</p>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-slate-400 text-xs text-center italic">
+                Si crees que es un error, contacta al organizador del evento.
+              </p>
+            </div>
+
+            <div className="bg-slate-50 border-t border-slate-100 px-7 py-4 text-center">
+              <p className="text-slate-400 text-xs italic">
+                EventHive · Sistema de Verificación de Tickets
+              </p>
+            </div>
+          </div>
+
+          <p className="text-center text-slate-400 text-xs mt-4">
+            Verificado el {new Date().toLocaleString('es-ES', {
+              day: '2-digit', month: 'long', year: 'numeric',
+              hour: '2-digit', minute: '2-digit'
+            })}
+          </p>
         </div>
       </div>
     );
