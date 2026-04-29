@@ -41,16 +41,30 @@ const getEvent = async (eventId) => {
   }
 };
 
+// ── HELPERS PUROS (testables) ────────────────────────────────────────────────
+// Parsea un código tipo EH-2024-X42 y devuelve el ID numérico, o null.
+const parseTicketCode = (code) => {
+  if (typeof code !== 'string') return null;
+  const match = code.toUpperCase().match(/^EH-\d{4}-X(\d+)$/);
+  return match ? parseInt(match[1], 10) : null;
+};
+
+// Busca el nombre de una categoría dentro de un objeto event con array categories.
+const getCategoryName = (event, categoryId) => {
+  if (!event || !Array.isArray(event.categories) || !categoryId) return null;
+  const cat = event.categories.find(c => c.id === categoryId);
+  return cat?.name || null;
+};
+
 // 0b. Verificar ticket por código (EH-YYYY-X####) — ruta pública para QR
 // Primera vez: marca el ticket como usado (usedAt = NOW) y devuelve valid: true
 // Siguientes veces: devuelve alreadyUsed: true con la fecha del primer uso
 app.get('/verify/:code', async (req, res) => {
   const code = req.params.code.toUpperCase();
-  const match = code.match(/^EH-\d{4}-X(\d+)$/);
-  if (!match) {
+  const ticketId = parseTicketCode(code);
+  if (!ticketId) {
     return res.status(400).json({ valid: false, error: 'Código de ticket inválido.' });
   }
-  const ticketId = parseInt(match[1], 10);
   try {
     const ticket = await Ticket.findByPk(ticketId);
     if (!ticket) {
@@ -65,11 +79,7 @@ app.get('/verify/:code', async (req, res) => {
     } catch { /* evento no disponible — igual devolvemos el ticket */ }
 
     // Buscar el nombre de la categoría
-    let categoryName = null;
-    if (ticket.categoryId && Array.isArray(event.categories)) {
-      const cat = event.categories.find(c => c.id === ticket.categoryId);
-      categoryName = cat?.name || null;
-    }
+    const categoryName = getCategoryName(event, ticket.categoryId);
 
     const basePayload = {
       code,
@@ -254,6 +264,19 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada en TICKET SERVICE', urlReceived: req.url });
 });
 
-sequelize.sync({ alter: true }).then(() => {
-  app.listen(PORT, () => console.log(`Ticket Service running on port ${PORT}`));
-}).catch(err => console.error('Database connection failed:', err));
+// Solo arranca el servidor si este archivo se ejecuta directamente (no en tests).
+if (require.main === module) {
+  sequelize.sync({ alter: true }).then(() => {
+    app.listen(PORT, () => console.log(`Ticket Service running on port ${PORT}`));
+  }).catch(err => console.error('Database connection failed:', err));
+}
+
+// Exporta módulos para que las pruebas puedan usarlos
+module.exports = {
+  app,
+  Ticket,
+  sequelize,
+  getEvent,
+  parseTicketCode,
+  getCategoryName
+};

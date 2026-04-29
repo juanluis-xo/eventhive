@@ -9,7 +9,20 @@
     "cors": "^2.8.5",
     "axios": "^1.4.0"
   },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4"
+  },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "jest --runInBand",
+    "test:unit": "jest tests/unit",
+    "test:integration": "jest tests/integration",
+    "test:coverage": "jest --coverage --runInBand"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testPathIgnorePatterns": ["/node_modules/"],
+    "coveragePathIgnorePatterns": ["/node_modules/", "/tests/"]
   }
 }
