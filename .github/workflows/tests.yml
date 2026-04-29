@@ -1,0 +1,47 @@
+name: 🧪 Tests del ticket-service
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  unit-and-integration-tests:
+    name: Pruebas unitarias e integración (Jest + Supertest)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend/ticket-service
+
+    steps:
+      - name: 📥 Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: ⚙️  Configurar Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: backend/ticket-service/package-lock.json
+
+      - name: 📦 Instalar dependencias
+        run: npm install
+
+      - name: 🧪 Correr pruebas unitarias
+        run: npm run test:unit
+
+      - name: 🌐 Correr pruebas de integración
+        run: npm run test:integration
+
+      - name: 📊 Generar reporte de cobertura
+        run: npm run test:coverage
+
+      - name: 📤 Publicar reporte de cobertura
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: backend/ticket-service/coverage/
+          retention-days: 30

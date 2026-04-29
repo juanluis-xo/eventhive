@@ -1,0 +1,2 @@
+# Carpeta para guardar capturas y reportes HTML del coverage
+# generados con `npm run test:coverage` en el ticket-service.
