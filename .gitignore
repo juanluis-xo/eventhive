@@ -33,3 +33,7 @@ yarn-error.log*
 
 # Docker volumes locales
 backend/*/node_modules/
+
+# Reportes de cobertura (se generan con npm run test:coverage)
+coverage/
+backend/*/coverage/
