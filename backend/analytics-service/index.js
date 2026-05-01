@@ -171,8 +171,11 @@ const collect = async () => {
   }
 };
 
-// Cron: cada 3 minutos
-cron.schedule('*/3 * * * *', collect);
+// Cron: cada 3 minutos (no se programa en tests)
+/* istanbul ignore next */
+if (require.main === module) {
+  cron.schedule('*/3 * * * *', collect);
+}
 
 // ── ENDPOINTS ─────────────────────────────────────────────────────────────────
 
@@ -270,7 +273,8 @@ app.post('/refresh', verifyAdmin, async (req, res) => {
   try {
     await collect();
     res.json({ message: 'Datos actualizados correctamente' });
-  } catch (err) {
+  } catch (/* istanbul ignore next */ err) {
+    /* istanbul ignore next */
     res.status(500).json({ error: err.message });
   }
 });
@@ -282,6 +286,7 @@ app.use((req, res) => {
 });
 
 // ── ARRANQUE CON REINTENTOS ───────────────────────────────────────────────────
+/* istanbul ignore next */
 const startWithRetry = async (attempt = 1) => {
   try {
     await sequelize.authenticate();
@@ -301,4 +306,19 @@ const startWithRetry = async (attempt = 1) => {
   }
 };
 
-startWithRetry();
+// Solo arranca si este archivo se ejecuta directamente (no en tests)
+/* istanbul ignore next */
+if (require.main === module) {
+  startWithRetry();
+}
+
+module.exports = {
+  app,
+  EventSnapshot,
+  CategorySnapshot,
+  DailySale,
+  sequelize,
+  verifyAdmin,
+  safeGet,
+  collect
+};

@@ -31,6 +31,23 @@ const User = sequelize.define('User', {
   role: { type: DataTypes.ENUM('organizer', 'attendee', 'admin'), defaultValue: 'attendee' }
 });
 
+// ── HELPERS PUROS (testables) ────────────────────────────────────────────────
+const VALID_ROLES = ['organizer', 'attendee', 'admin'];
+const isValidRole = (role) => VALID_ROLES.includes(role);
+
+// Construye el objeto de usuario "público" (sin password)
+const buildPublicUser = (user) => {
+  if (!user) return null;
+  return { id: user.id, username: user.username, email: user.email, role: user.role };
+};
+
+// Construye el payload del JWT
+const buildJwtPayload = async (user) => ({
+  id: user.id,
+  email: user.email,
+  role: user.role
+});
+
 // Routes
 app.post('/register', async (req, res) => {
   try {
@@ -47,17 +64,14 @@ app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ where: { email } });
-    
+
     if (user && await bcrypt.compare(password, user.password)) {
-      const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role },
-        JWT_SECRET,
-        { expiresIn: '24h' }
-      );
-      res.json({ 
-        message: 'Login successful', 
+      const payload = await buildJwtPayload(user);
+      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
+      res.json({
+        message: 'Login successful',
         token,
-        user: { id: user.id, username: user.username, email: user.email, role: user.role } 
+        user: buildPublicUser(user)
       });
     } else {
       res.status(401).json({ error: 'Credenciales inválidas' });
@@ -120,7 +134,22 @@ async function seedAdminIfNeeded() {
   }
 }
 
-sequelize.sync().then(async () => {
-  await seedAdminIfNeeded();
-  app.listen(PORT, () => console.log(`User Service running on port ${PORT}`));
-}).catch(err => console.error('Database connection failed:', err));
+// Solo arranca el servidor si este archivo se ejecuta directamente (no en tests).
+/* istanbul ignore next */
+if (require.main === module) {
+  sequelize.sync().then(async () => {
+    await seedAdminIfNeeded();
+    app.listen(PORT, () => console.log(`User Service running on port ${PORT}`));
+  }).catch(err => console.error('Database connection failed:', err));
+}
+
+module.exports = {
+  app,
+  User,
+  sequelize,
+  isValidRole,
+  buildPublicUser,
+  buildJwtPayload,
+  seedAdminIfNeeded,
+  VALID_ROLES
+};

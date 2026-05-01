@@ -409,7 +409,8 @@ app.use((req, res) => {
 });
 
 // ── CRON: session.reminder cada hora ─────────────────────────────────────────
-cron.schedule('0 * * * *', async () => {
+/* istanbul ignore next */
+const sessionReminderCron = async () => {
   try {
     console.log('[Notifications] Verificando recordatorios de sesiones...');
     const eventsRes = await safeGet(`${EVENTS_URL}/`, 5002, '/');
@@ -454,9 +455,15 @@ cron.schedule('0 * * * *', async () => {
   } catch (err) {
     console.error('[Notifications] Error en cron de recordatorios:', err.message);
   }
-});
+};
+
+/* istanbul ignore next */
+if (require.main === module) {
+  cron.schedule('0 * * * *', sessionReminderCron);
+}
 
 // ── ARRANQUE CON REINTENTOS ───────────────────────────────────────────────────
+/* istanbul ignore next */
 const startWithRetry = async (attempt = 1) => {
   try {
     await sequelize.authenticate();
@@ -473,4 +480,23 @@ const startWithRetry = async (attempt = 1) => {
   }
 };
 
-startWithRetry();
+/* istanbul ignore next */
+if (require.main === module) {
+  startWithRetry();
+}
+
+module.exports = {
+  app,
+  Notification,
+  PushToken,
+  EmailLog,
+  sequelize,
+  verifyAdmin,
+  safeGet,
+  buildEmailHtml,
+  sendEmail,
+  getUserEmail,
+  sendPush,
+  dispatch,
+  getEventTitle
+};

@@ -26,27 +26,39 @@ const Payment = sequelize.define('Payment', {
   transactionId: { type: DataTypes.STRING, allowNull: false }
 });
 
+// ── HELPERS PUROS (testables) ────────────────────────────────────────────────
+// Genera un transactionId con formato TXN-XXXXXXXXX (9 caracteres alfanuméricos)
+const generateTransactionId = () => `TXN-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+// Verifica si el método de pago es uno de los soportados
+const VALID_METHODS = ['paypal', 'credit_card', 'debit_card'];
+const isValidPaymentMethod = (method) => VALID_METHODS.includes(method);
+
+// Formatea la respuesta de pago exitoso (devuelve una Promise)
+const formatPaymentResponse = async (payment) => ({
+  success: true,
+  message: 'Pago procesado exitosamente',
+  payment
+});
+
 // Endpoint to process payment
 app.post('/process', async (req, res) => {
   try {
     const { userId, eventId, amount, method } = req.body;
-    
+
     // Simulate payment processing
     console.log(`[PaymentService] Processing ${method} payment for user ${userId}, event ${eventId}, amount ${amount}`);
-    
+
     const payment = await Payment.create({
       userId,
       eventId,
       amount,
       method,
-      transactionId: `TXN-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
+      transactionId: generateTransactionId()
     });
 
-    res.status(201).json({
-      success: true,
-      message: 'Pago procesado exitosamente',
-      payment
-    });
+    const response = await formatPaymentResponse(payment);
+    res.status(201).json(response);
   } catch (error) {
     console.error('[PaymentService] Error processing payment:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -67,6 +79,21 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'Payment Service is running' });
 });
 
-sequelize.sync().then(() => {
-  app.listen(PORT, () => console.log(`Payment Service running on port ${PORT}`));
-}).catch(err => console.error('Database connection failed:', err));
+// Solo arranca el servidor si este archivo se ejecuta directamente (no en tests).
+/* istanbul ignore next */
+if (require.main === module) {
+  sequelize.sync().then(() => {
+    app.listen(PORT, () => console.log(`Payment Service running on port ${PORT}`));
+  }).catch(err => console.error('Database connection failed:', err));
+}
+
+// Exporta módulos para que las pruebas puedan usarlos
+module.exports = {
+  app,
+  Payment,
+  sequelize,
+  generateTransactionId,
+  isValidPaymentMethod,
+  formatPaymentResponse,
+  VALID_METHODS
+};

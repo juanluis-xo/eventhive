@@ -244,7 +244,21 @@ app.delete('/:id', verifyAdmin, async (req, res) => {
   }
 });
 
-sequelize.sync({ alter: true }).then(() => {
-  console.log('Events Database synced');
-  app.listen(PORT, () => console.log(`Events Service running on port ${PORT}`));
-}).catch(err => console.error('Unable to connect to the database:', err));
+// Solo arranca el servidor si este archivo se ejecuta directamente (no en tests).
+/* istanbul ignore next */
+if (require.main === module) {
+  sequelize.sync({ alter: true }).then(() => {
+    console.log('Events Database synced');
+    app.listen(PORT, () => console.log(`Events Service running on port ${PORT}`));
+  }).catch(err => console.error('Unable to connect to the database:', err));
+}
+
+module.exports = {
+  app,
+  Event,
+  EventCategory,
+  EventWallet,
+  sequelize,
+  verifyAdmin,
+  attachCategories
+};

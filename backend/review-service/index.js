@@ -30,6 +30,29 @@ const Review = sequelize.define('Review', {
   comment: { type: DataTypes.TEXT, allowNull: false }
 });
 
+// ── HELPERS PUROS (testables) ────────────────────────────────────────────────
+// Calcula el promedio de ratings (devuelve 0 si la lista está vacía)
+const calculateAverage = (reviews) => {
+  if (!Array.isArray(reviews) || reviews.length === 0) return 0;
+  const total = reviews.reduce((acc, curr) => acc + (curr.rating || 0), 0);
+  return parseFloat((total / reviews.length).toFixed(1));
+};
+
+// Parsea una query string "1,2,3" en un array de números: [1, 2, 3]
+const parseEventIds = (queryString) => {
+  if (!queryString || typeof queryString !== 'string') return [];
+  return queryString.split(',')
+    .map(id => parseInt(id, 10))
+    .filter(id => !Number.isNaN(id));
+};
+
+// Formatea el objeto de estadísticas de un evento (devuelve una Promise)
+const formatEventStats = async (eventId, reviews) => ({
+  eventId,
+  count: reviews.length,
+  average: calculateAverage(reviews)
+});
+
 // Routes
 // Crear reseña
 app.post('/', async (req, res) => {
@@ -45,19 +68,14 @@ app.post('/', async (req, res) => {
 // Obtener reseñas por evento
 app.get('/event/:eventId', async (req, res) => {
   try {
-    const reviews = await Review.findAll({ 
+    const reviews = await Review.findAll({
       where: { eventId: req.params.eventId },
       order: [['createdAt', 'DESC']]
     });
-    
-    // Calcular promedio
-    const average = reviews.length > 0 
-      ? reviews.reduce((acc, curr) => acc + curr.rating, 0) / reviews.length 
-      : 0;
 
     res.json({
       count: reviews.length,
-      average: parseFloat(average.toFixed(1)),
+      average: calculateAverage(reviews),
       reviews
     });
   } catch (error) {
@@ -69,23 +87,14 @@ app.get('/event/:eventId', async (req, res) => {
 app.get('/stats', async (req, res) => {
   try {
     const { eventIds } = req.query;
-    if (!eventIds) return res.json([]);
-    
-    const ids = eventIds.split(',').map(id => parseInt(id));
-    
+    const ids = parseEventIds(eventIds);
+    if (ids.length === 0) return res.json([]);
+
     const stats = await Promise.all(ids.map(async (id) => {
       const reviews = await Review.findAll({ where: { eventId: id } });
-      const average = reviews.length > 0 
-        ? reviews.reduce((acc, curr) => acc + curr.rating, 0) / reviews.length 
-        : 0;
-      
-      return {
-        eventId: id,
-        count: reviews.length,
-        average: parseFloat(average.toFixed(1))
-      };
+      return formatEventStats(id, reviews);
     }));
-    
+
     res.json(stats);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -96,12 +105,24 @@ app.get('/health', (req, res) => {
   res.json({ status: 'Review Service is running' });
 });
 
-// Sync and Start
-sequelize.sync().then(() => {
-  console.log('Reviews Database synced');
-  app.listen(PORT, () => {
-    console.log(`Review Service running on port ${PORT}`);
+// Solo arranca el servidor si este archivo se ejecuta directamente (no en tests).
+/* istanbul ignore next */
+if (require.main === module) {
+  sequelize.sync().then(() => {
+    console.log('Reviews Database synced');
+    app.listen(PORT, () => {
+      console.log(`Review Service running on port ${PORT}`);
+    });
+  }).catch(err => {
+    console.error('Unable to connect to the database:', err);
   });
-}).catch(err => {
-  console.error('Unable to connect to the database:', err);
-});
+}
+
+module.exports = {
+  app,
+  Review,
+  sequelize,
+  calculateAverage,
+  parseEventIds,
+  formatEventStats
+};
